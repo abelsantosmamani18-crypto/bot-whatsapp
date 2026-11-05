@@ -12,8 +12,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Modelo activo, gratuito y estable en la API de Google AI Studio
-    model = genai.GenerativeModel('gemini-2.0-flash')
+    # Usamos gemini-3.8-flash tal como lo exige el servidor de Google en los logs
+    model = genai.GenerativeModel('gemini-3.8-flash')
 else:
     model = None
     print("ADVERTENCIA: No se encontró la llave de Gemini.")
@@ -98,3 +98,4 @@ def webhook():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
