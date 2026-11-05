@@ -12,8 +12,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Usamos exclusivamente gemini-1.5-flash (económico y rápido)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Modelo activo, gratuito y estable en la API de Google AI Studio
+    model = genai.GenerativeModel('gemini-2.0-flash')
 else:
     model = None
     print("ADVERTENCIA: No se encontró la llave de Gemini.")
