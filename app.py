@@ -12,8 +12,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # CORRECCIÓN 1: Usamos 'gemini-1.5-flash-latest' que es más universal
-    model = genai.GenerativeModel('gemini-1.5-flash-latest')
+    # SOLUCIÓN AL PROBLEMA 1: Nombre correcto y verificado del modelo
+    model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     model = None
     print("ADVERTENCIA: No se encontró la llave de Gemini.")
@@ -47,7 +47,6 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
         return True
     except requests.exceptions.RequestException as e:
         print(f"Error enviando mensaje a Meta: {e}")
-        # CORRECCIÓN 2: Le decimos que imprima la razón EXACTA del bloqueo de Meta
         if e.response is not None:
             print(f"Detalle del error de Meta: {e.response.text}")
         return False
