@@ -13,7 +13,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    # Restaurado a la versión exigida y correcta
+    model = genai.GenerativeModel('gemini-3.8-flash')
 else:
     model = None
     print("ADVERTENCIA: No se encontro la llave de Gemini.")
@@ -90,12 +91,14 @@ def webhook():
                                 texto_recibido = mensaje["text"]["body"]
                                 print(f"Mensaje de {numero_remitente}: {texto_recibido}")
                                 
+                                # El hilo evita que Meta sature las peticiones por timeout
                                 hilo = threading.Thread(target=procesar_mensaje_gemini, args=(numero_remitente, texto_recibido))
                                 hilo.start()
 
         except Exception as e:
             print(f"Error general en el webhook: {e}")
 
+        # Meta siempre recibe su 200 OK inmediatamente
         return jsonify({"status": "success"}), 200
 
 if __name__ == "__main__":
