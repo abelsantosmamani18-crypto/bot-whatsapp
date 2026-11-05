@@ -12,7 +12,7 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # CONFIGURACIÓN CORRECTA: Usamos el modelo oficial económico de bajo costo
+    # Usamos exclusivamente gemini-1.5-flash (económico y rápido)
     model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     model = None
@@ -80,19 +80,19 @@ def webhook():
                                 texto_recibido = mensaje["text"]["body"]
                                 print(f"Mensaje de {numero_remitente}: {texto_recibido}")
                                 
-                                respuesta_final = "Lo siento, tengo un problema técnico."
+                                respuesta_final = "Lo siento, tengo un problema técnico temporal."
                                 if model:
                                     try:
-                                        prompt = f"Eres el asistente virtual de 'Santos Digital Media'. Responde de forma amable, corta y útil a este mensaje: '{texto_recibido}'"
+                                        prompt = f"Eres el asistente virtual comercial de 'Santos Digital Media'. Responde de forma amable, corta y útil a este mensaje de un cliente: '{texto_recibido}'"
                                         respuesta_ia = model.generate_content(prompt)
                                         respuesta_final = respuesta_ia.text
                                     except Exception as e:
-                                        print(f"Error con Gemini: {e}")
+                                        print(f"Error generando respuesta con Gemini: {e}")
                                 
                                 enviar_mensaje_whatsapp(numero_remitente, respuesta_final)
 
         except Exception as e:
-            print(f"Error en el webhook: {e}")
+            print(f"Error general en el webhook: {e}")
 
         return jsonify({"status": "success"}), 200
 
