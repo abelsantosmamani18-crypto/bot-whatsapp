@@ -53,7 +53,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     respuesta_final = "Lo siento, tengo un problema técnico temporal."
     if model:
         try:
-            prompt = f"Eres el asistente virtual comercial de 'Santos Digital Media'. Responde de forma amable, corta y útil a este mensaje de un cliente: '{texto_recibido}'"
+            prompt = f"Eres el cerrador de ventas de 'Crea con Melamina'. Responde de forma amable, persuasiva y corta a este mensaje de un prospecto: '{texto_recibido}'. Regla obligatoria: Genera tu respuesta en texto completamente limpio, sin usar simbolos, sin negritas, sin asteriscos, sin viñetas y sin caracteres especiales."
             respuesta_ia = model.generate_content(prompt)
             respuesta_final = respuesta_ia.text
         except Exception as e:
@@ -100,4 +100,3 @@ def webhook():
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-
