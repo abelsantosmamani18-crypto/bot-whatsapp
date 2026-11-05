@@ -1,17 +1,60 @@
 import os
+import requests
 from flask import Flask, request, jsonify
+import google.generativeai as genai
 
 app = Flask(__name__)
 
+# 1. Llamamos a las credenciales guardadas en Render
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "bot_melamina_cejas_2026")
+WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
+PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# 2. Configuramos la inteligencia de Gemini
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+else:
+    model = None
+    print("ADVERTENCIA: No se encontró la llave de Gemini.")
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Servidor del Bot activo y funcionando.", 200
+    return "Servidor del Bot activo, conectado a WhatsApp y Gemini.", 200
 
-# AQUI ESTA LA MAGIA: Agregamos POST para recibir mensajes
+# 3. Función para enviar la respuesta de vuelta al cliente
+def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
+    if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+        print("ERROR: Faltan credenciales de WhatsApp.")
+        return False
+        
+    url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": telefono_destino,
+        "type": "text",
+        "text": {
+            "body": texto_mensaje
+        }
+    }
+    
+    try:
+        respuesta = requests.post(url, headers=headers, json=payload)
+        respuesta.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error enviando mensaje: {e}")
+        return False
+
+# 4. El Webhook que recibe y procesa (LA MAGIA COMPLETA)
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
+    # Verificación de Meta
     if request.method == "GET":
         mode = request.args.get("hub.mode")
         token = request.args.get("hub.verify_token")
@@ -22,14 +65,42 @@ def webhook():
         else:
             return "Forbidden", 403
 
+    # Cuando un cliente envía un mensaje
     elif request.method == "POST":
-        # Extraemos la información del mensaje que manda Meta
-        body = request.get_json()
-        print("====== NUEVO MENSAJE RECIBIDO ======")
-        print(body)
-        print("====================================")
+        try:
+            body = request.get_json()
+            
+            if body.get("object") == "whatsapp_business_account":
+                for entry in body.get("entry", []):
+                    for change in entry.get("changes", []):
+                        value = change.get("value", {})
+                        
+                        if "messages" in value:
+                            mensaje = value["messages"][0]
+                            numero_remitente = mensaje["from"]
+                            
+                            # Si el cliente mandó un texto
+                            if mensaje["type"] == "text":
+                                texto_recibido = mensaje["text"]["body"]
+                                print(f"Mensaje de {numero_remitente}: {texto_recibido}")
+                                
+                                # Consultamos a Gemini
+                                respuesta_final = "Lo siento, tengo un problema técnico."
+                                if model:
+                                    try:
+                                        prompt = f"Eres el asistente virtual de 'Santos Digital Media'. Responde de forma amable, corta y útil a este mensaje: '{texto_recibido}'"
+                                        respuesta_ia = model.generate_content(prompt)
+                                        respuesta_final = respuesta_ia.text
+                                    except Exception as e:
+                                        print(f"Error con Gemini: {e}")
+                                
+                                # Enviamos el texto de vuelta a WhatsApp
+                                enviar_mensaje_whatsapp(numero_remitente, respuesta_final)
 
-        # RESPUESTA OBLIGATORIA A META PARA QUE NO TE BLOQUEE
+        except Exception as e:
+            print(f"Error en el webhook: {e}")
+
+        # SIEMPRE responder 200 OK para que Meta no bloquee el número
         return jsonify({"status": "success"}), 200
 
 if __name__ == "__main__":
