@@ -1,5 +1,6 @@
 import os
 import requests
+import threading
 from flask import Flask, request, jsonify
 import google.generativeai as genai
 
@@ -12,11 +13,10 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Usamos gemini-3.8-flash tal como lo exige el servidor de Google en los logs
-    model = genai.GenerativeModel('gemini-3.8-flash')
+    model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     model = None
-    print("ADVERTENCIA: No se encontró la llave de Gemini.")
+    print("ADVERTENCIA: No se encontro la llave de Gemini.")
 
 @app.route("/", methods=["GET"])
 def home():
@@ -47,9 +47,19 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
         return True
     except requests.exceptions.RequestException as e:
         print(f"Error enviando mensaje a Meta: {e}")
-        if e.response is not None:
-            print(f"Detalle del error de Meta: {e.response.text}")
         return False
+
+def procesar_mensaje_gemini(numero_remitente, texto_recibido):
+    respuesta_final = "Lo siento, tengo un problema técnico temporal."
+    if model:
+        try:
+            prompt = f"Eres el asistente virtual comercial de 'Santos Digital Media'. Responde de forma amable, corta y útil a este mensaje de un cliente: '{texto_recibido}'"
+            respuesta_ia = model.generate_content(prompt)
+            respuesta_final = respuesta_ia.text
+        except Exception as e:
+            print(f"Error generando respuesta con Gemini: {e}")
+    
+    enviar_mensaje_whatsapp(numero_remitente, respuesta_final)
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
@@ -80,16 +90,8 @@ def webhook():
                                 texto_recibido = mensaje["text"]["body"]
                                 print(f"Mensaje de {numero_remitente}: {texto_recibido}")
                                 
-                                respuesta_final = "Lo siento, tengo un problema técnico temporal."
-                                if model:
-                                    try:
-                                        prompt = f"Eres el asistente virtual comercial de 'Santos Digital Media'. Responde de forma amable, corta y útil a este mensaje de un cliente: '{texto_recibido}'"
-                                        respuesta_ia = model.generate_content(prompt)
-                                        respuesta_final = respuesta_ia.text
-                                    except Exception as e:
-                                        print(f"Error generando respuesta con Gemini: {e}")
-                                
-                                enviar_mensaje_whatsapp(numero_remitente, respuesta_final)
+                                hilo = threading.Thread(target=procesar_mensaje_gemini, args=(numero_remitente, texto_recibido))
+                                hilo.start()
 
         except Exception as e:
             print(f"Error general en el webhook: {e}")
