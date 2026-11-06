@@ -9,8 +9,8 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "bot_melamina_cejas_2026")
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
 
-# LLAVE DE GOOGLE
-GEMINI_API_KEY = "AQ.Ab8RN6J_pcegUE9MFX8VCtQvslmcA4XgfC9YkAx701Vd4W4AWA"
+# LLAVE DE GOOGLE PROTEGIDA (Se lee desde Render, no desde GitHub)
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 @app.route("/", methods=["GET"])
 def home():
