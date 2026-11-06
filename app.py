@@ -46,8 +46,8 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     
     if GEMINI_API_KEY:
         try:
-            # CONEXIÓN DIRECTA A GEMINI (Esquivando la librería genai)
-            url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+            # CONEXIÓN DIRECTA CON EL NOMBRE EXACTO QUE EXIGE EL SERVIDOR DE GOOGLE
+            url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
             headers_gemini = {'Content-Type': 'application/json'}
             prompt = f"Eres el cerrador de ventas de 'Crea con Melamina'. Responde de forma amable, persuasiva y corta a este mensaje de un prospecto: '{texto_recibido}'. Regla obligatoria: Genera tu respuesta en texto completamente limpio, sin usar simbolos, sin negritas, sin asteriscos, sin viñetas y sin caracteres especiales."
             
