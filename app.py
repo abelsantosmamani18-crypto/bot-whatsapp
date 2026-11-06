@@ -2,7 +2,6 @@ import os
 import requests
 import threading
 from flask import Flask, request, jsonify
-import google.generativeai as genai
 
 app = Flask(__name__)
 
@@ -11,17 +10,9 @@ WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-if GEMINI_API_KEY:
-    genai.configure(api_key=GEMINI_API_KEY)
-    # CONFIGURACIÓN CORRECTA: Modelo económico oficial 1.5 Flash
-    model = genai.GenerativeModel('gemini-1.5-flash')
-else:
-    model = None
-    print("ADVERTENCIA: No se encontro la llave de Gemini.")
-
 @app.route("/", methods=["GET"])
 def home():
-    return "Servidor del Bot activo, conectado a WhatsApp y Gemini.", 200
+    return "Servidor del Bot activo, conectado a WhatsApp y Gemini por API REST directa.", 200
 
 def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
@@ -52,14 +43,30 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
 
 def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     respuesta_final = "Lo siento, tengo un problema técnico temporal."
-    if model:
-        try:
-            prompt = f"Eres el cerrador de ventas de 'Crea con Melamina'. Responde de forma amable, persuasiva y corta a este mensaje de un prospecto: '{texto_recibido}'. Regla obligatoria: Genera tu respuesta en texto completamente limpio, sin usar simbolos, sin negritas, sin asteriscos, sin viñetas y sin caracteres especiales."
-            respuesta_ia = model.generate_content(prompt)
-            respuesta_final = respuesta_ia.text
-        except Exception as e:
-            print(f"Error generando respuesta con Gemini: {e}")
     
+    if GEMINI_API_KEY:
+        try:
+            # CONEXIÓN DIRECTA A GEMINI (Esquivando la librería genai)
+            url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+            headers_gemini = {'Content-Type': 'application/json'}
+            prompt = f"Eres el cerrador de ventas de 'Crea con Melamina'. Responde de forma amable, persuasiva y corta a este mensaje de un prospecto: '{texto_recibido}'. Regla obligatoria: Genera tu respuesta en texto completamente limpio, sin usar simbolos, sin negritas, sin asteriscos, sin viñetas y sin caracteres especiales."
+            
+            payload_gemini = {
+                "contents": [{"parts": [{"text": prompt}]}]
+            }
+            
+            res = requests.post(url_gemini, headers=headers_gemini, json=payload_gemini)
+            
+            if res.status_code == 200:
+                data = res.json()
+                respuesta_final = data['candidates'][0]['content']['parts'][0]['text']
+            else:
+                print(f"Error real de Gemini: {res.text}")
+        except Exception as e:
+            print(f"Error en la conexión directa a Gemini: {e}")
+    else:
+        print("ADVERTENCIA: No hay GEMINI_API_KEY configurada.")
+
     enviar_mensaje_whatsapp(numero_remitente, respuesta_final)
 
 @app.route("/webhook", methods=["GET", "POST"])
@@ -91,14 +98,12 @@ def webhook():
                                 texto_recibido = mensaje["text"]["body"]
                                 print(f"Mensaje de {numero_remitente}: {texto_recibido}")
                                 
-                                # El hilo evita que Meta sature las peticiones por timeout
                                 hilo = threading.Thread(target=procesar_mensaje_gemini, args=(numero_remitente, texto_recibido))
                                 hilo.start()
 
         except Exception as e:
             print(f"Error general en el webhook: {e}")
 
-        # Meta siempre recibe su 200 OK inmediatamente
         return jsonify({"status": "success"}), 200
 
 if __name__ == "__main__":
