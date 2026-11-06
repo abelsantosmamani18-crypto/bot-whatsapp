@@ -8,11 +8,14 @@ app = Flask(__name__)
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "bot_melamina_cejas_2026")
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# ¡AQUÍ ESTÁ LA SOLUCIÓN! Burlamos la memoria de Render pegando la llave directa.
+# BORRA "PEGA_TU_LLAVE_AQUI" Y PEGA TU LLAVE COMPLETA (LA QUE TERMINA EN 4AWA) ENTRE LAS COMILLAS.
+GEMINI_API_KEY = "PEGA_TU_LLAVE_AQUI"
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Servidor del Bot activo, conectado a WhatsApp y Gemini por API REST directa.", 200
+    return "Servidor del Bot activo, conectado a WhatsApp y Gemini 1.5 Flash.", 200
 
 def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
@@ -44,10 +47,10 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
 def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     respuesta_final = "Lo siento, tengo un problema técnico temporal."
     
-    if GEMINI_API_KEY:
+    if GEMINI_API_KEY and GEMINI_API_KEY != "PEGA_TU_LLAVE_AQUI":
         try:
-            # CONEXIÓN DIRECTA CON EL NOMBRE EXACTO QUE EXIGE EL SERVIDOR DE GOOGLE
-            url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={GEMINI_API_KEY}"
+            # Regresamos al nombre oficial exacto para el modelo gratuito
+            url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
             headers_gemini = {'Content-Type': 'application/json'}
             prompt = f"Eres el cerrador de ventas de 'Crea con Melamina'. Responde de forma amable, persuasiva y corta a este mensaje de un prospecto: '{texto_recibido}'. Regla obligatoria: Genera tu respuesta en texto completamente limpio, sin usar simbolos, sin negritas, sin asteriscos, sin viñetas y sin caracteres especiales."
             
@@ -65,7 +68,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
         except Exception as e:
             print(f"Error en la conexión directa a Gemini: {e}")
     else:
-        print("ADVERTENCIA: No hay GEMINI_API_KEY configurada.")
+        print("ADVERTENCIA: No has pegado tu llave real en el código de GitHub.")
 
     enviar_mensaje_whatsapp(numero_remitente, respuesta_final)
 
