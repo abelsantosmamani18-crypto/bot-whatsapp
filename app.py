@@ -9,12 +9,12 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "bot_melamina_cejas_2026")
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
 
-# LLAVE INYECTADA DIRECTAMENTE PARA BURLAR A RENDER
+# LLAVE INYECTADA DIRECTAMENTE
 GEMINI_API_KEY = "AQ.Ab8RN6J_pcegUE9MFX8VCtQvslmcA4XgfC9YkAx701Vd4W4AWA"
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Servidor del Bot activo, conectado a WhatsApp y Gemini 1.5 Flash.", 200
+    return "Servidor del Bot activo, conectado a WhatsApp y Gemini 1.5 Flash 002.", 200
 
 def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
@@ -48,8 +48,8 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     
     if GEMINI_API_KEY:
         try:
-            # CONEXIÓN DIRECTA AL MODELO 1.5 FLASH (El más económico y rápido)
-            url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={GEMINI_API_KEY}"
+            # CONEXIÓN DIRECTA CON EL MODELO EXACTO EXIGIDO POR LA API REST: gemini-1.5-flash-002
+            url_gemini = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-002:generateContent?key={GEMINI_API_KEY}"
             headers_gemini = {'Content-Type': 'application/json'}
             prompt = f"Eres el cerrador de ventas de 'Crea con Melamina'. Responde de forma amable, persuasiva y corta a este mensaje de un prospecto: '{texto_recibido}'. Regla obligatoria: Genera tu respuesta en texto completamente limpio, sin usar simbolos, sin negritas, sin asteriscos, sin viñetas y sin caracteres especiales."
             
