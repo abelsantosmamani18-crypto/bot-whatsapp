@@ -13,8 +13,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
-    # Restaurado a la versión exigida y correcta
-    model = genai.GenerativeModel('gemini-3.8-flash')
+    # CONFIGURACIÓN CORRECTA: Modelo económico oficial 1.5 Flash
+    model = genai.GenerativeModel('gemini-1.5-flash')
 else:
     model = None
     print("ADVERTENCIA: No se encontro la llave de Gemini.")
