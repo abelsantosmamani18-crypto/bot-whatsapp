@@ -9,12 +9,12 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "bot_melamina_cejas_2026")
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
 
-# LLAVE DE GOOGLE - Confirmado que está activa y sin caducar
+# LLAVE DE GOOGLE
 GEMINI_API_KEY = "AQ.Ab8RN6J_pcegUE9MFX8VCtQvslmcA4XgfC9YkAx701Vd4W4AWA"
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Servidor activo, conectado a WhatsApp y Gemini (v1).", 200
+    return "Servidor activo, conectado a WhatsApp y Gemini 3.8 Flash.", 200
 
 def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
@@ -48,8 +48,8 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     
     if GEMINI_API_KEY:
         try:
-            # CORRECCIÓN DEFINITIVA: Usamos la ruta oficial v1 y el modelo actual gemini-2.0-flash
-            url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
+            # CORRECCIÓN FINAL: Usamos el modelo gemini-3.8-flash que el propio Google exigió en el error
+            url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key={GEMINI_API_KEY}"
             headers_gemini = {'Content-Type': 'application/json'}
             prompt = f"Eres el cerrador de ventas de 'Crea con Melamina'. Responde de forma amable, persuasiva y corta a este mensaje de un prospecto: '{texto_recibido}'. Regla obligatoria: Genera tu respuesta en texto completamente limpio, sin usar simbolos, sin negritas, sin asteriscos, sin viñetas y sin caracteres especiales."
             
