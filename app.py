@@ -37,6 +37,13 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     
     try:
         respuesta = requests.post(url, headers=headers, json=payload)
+        
+        # ESTA ES LA LUPA: Imprimimos el error exacto de Meta antes de que lance la excepción
+        if respuesta.status_code != 200:
+            print("\n" + "="*50)
+            print(f"🛑 RECHAZO EXACTO DE META: {respuesta.text}")
+            print("="*50 + "\n")
+            
         respuesta.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
