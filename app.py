@@ -9,8 +9,12 @@ VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "bot_melamina_cejas_2026")
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
 
-# LLAVE DE GOOGLE PROTEGIDA (Se lee desde Render, no desde GitHub)
+# LLAVE DE GOOGLE PROTEGIDA
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+
+# --- CANDADO 2: MEMORIA RAM GRATUITA (Diccionario temporal) ---
+# Aquí se guardarán los últimos 4 mensajes de cada cliente activo
+historial_conversaciones = {}
 
 @app.route("/", methods=["GET"])
 def home():
@@ -37,8 +41,6 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     
     try:
         respuesta = requests.post(url, headers=headers, json=payload)
-        
-        # ESTA ES LA LUPA: Imprimimos el error exacto de Meta antes de que lance la excepción
         if respuesta.status_code != 200:
             print("\n" + "="*50)
             print(f"🛑 RECHAZO EXACTO DE META: {respuesta.text}")
@@ -51,29 +53,37 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
         return False
 
 def procesar_mensaje_gemini(numero_remitente, texto_recibido):
+    global historial_conversaciones
     respuesta_final = "Lo siento, tengo un problema técnico temporal."
     
     if GEMINI_API_KEY:
         try:
-            # CORRECCIÓN FINAL: Usamos el modelo gemini-3.8-flash que el propio Google exigió en el error
             url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key={GEMINI_API_KEY}"
             headers_gemini = {'Content-Type': 'application/json'}
             
-            # --- INICIO DEL CEREBRO EXTERNO ---
+            # 1. Leer el cerebro comercial (el prompt)
             try:
-                # Leemos el archivo prompt_ventas.txt en cada petición
                 with open("prompt_ventas.txt", "r", encoding="utf-8") as archivo:
                     instruccion_base = archivo.read().strip()
             except Exception as e:
                 print(f"Error leyendo el prompt: {e}")
                 instruccion_base = "Eres un asistente de ventas."
             
-            # Unimos la inteligencia comercial externa con el mensaje del prospecto
-            prompt = f"{instruccion_base}\n\nMensaje del prospecto: '{texto_recibido}'"
-            # --- FIN DEL CEREBRO EXTERNO ---
+            # --- CANDADO 2: RECUPERAR LOS ÚLTIMOS 4 MENSAJES ---
+            memoria = historial_conversaciones.get(numero_remitente, [])
+            texto_historial = ""
+            if memoria:
+                texto_historial = "\n\nÚltimos mensajes de contexto:\n" + "\n".join(memoria)
             
+            # Unimos la inteligencia + la memoria reciente + el nuevo mensaje
+            prompt = f"{instruccion_base}{texto_historial}\n\nMensaje actual del prospecto: '{texto_recibido}'"
+            
+            # --- CANDADO 3: ASFIXIA FÍSICA DE TOKENS (Máximo 150) ---
             payload_gemini = {
-                "contents": [{"parts": [{"text": prompt}]}]
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {
+                    "maxOutputTokens": 150  # Obliga a responder en max. ~100 palabras (Cierra rápido y barato)
+                }
             }
             
             res = requests.post(url_gemini, headers=headers_gemini, json=payload_gemini)
@@ -81,6 +91,13 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             if res.status_code == 200:
                 data = res.json()
                 respuesta_final = data['candidates'][0]['content']['parts'][0]['text']
+                
+                # --- CANDADO 2: GUARDAR HISTORIA Y RECORTAR (Ventana Deslizante) ---
+                memoria.append(f"Cliente: {texto_recibido}")
+                memoria.append(f"Tú: {respuesta_final}")
+                # Solo conservamos los últimos 4 elementos (las últimas 2 preguntas y 2 respuestas)
+                historial_conversaciones[numero_remitente] = memoria[-4:]
+                
             else:
                 print(f"Error real de Gemini: {res.text}")
         except Exception as e:
@@ -111,6 +128,12 @@ def webhook():
                     for change in entry.get("changes", []):
                         value = change.get("value", {})
                         
+                        # --- CANDADO 1: FILTRO DE EVENTOS BASURA ---
+                        # Si Meta nos manda un recibo de "leído" o "entregado", lo ignoramos
+                        # Esto evita cobros fantasma en Google Cloud.
+                        if "statuses" in value:
+                            continue 
+                        
                         if "messages" in value:
                             mensaje = value["messages"][0]
                             numero_remitente = mensaje["from"]
@@ -125,6 +148,7 @@ def webhook():
         except Exception as e:
             print(f"Error general en el webhook: {e}")
 
+        # Respondemos 200 OK instantáneo para que Meta no se moleste
         return jsonify({"status": "success"}), 200
 
 if __name__ == "__main__":
