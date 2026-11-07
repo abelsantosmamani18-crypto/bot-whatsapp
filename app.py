@@ -13,7 +13,6 @@ PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # --- CANDADO 2: MEMORIA RAM GRATUITA (Diccionario temporal) ---
-# Aquí se guardarán los últimos 4 mensajes de cada cliente activo
 historial_conversaciones = {}
 
 @app.route("/", methods=["GET"])
@@ -78,12 +77,8 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             # Unimos la inteligencia + la memoria reciente + el nuevo mensaje
             prompt = f"{instruccion_base}{texto_historial}\n\nMensaje actual del prospecto: '{texto_recibido}'"
             
-            # --- CANDADO 3: ASFIXIA FÍSICA DE TOKENS (Corregido a 350) ---
             payload_gemini = {
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {
-                    "maxOutputTokens": 350
-                }
+                "contents": [{"parts": [{"text": prompt}]}]
             }
             
             res = requests.post(url_gemini, headers=headers_gemini, json=payload_gemini)
@@ -92,10 +87,9 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 data = res.json()
                 respuesta_final = data['candidates'][0]['content']['parts'][0]['text']
                 
-                # --- CANDADO 2: GUARDAR HISTORIA Y RECORTAR (Ventana Deslizante) ---
+                # --- CANDADO 2: GUARDAR HISTORIA Y RECORTAR ---
                 memoria.append(f"Cliente: {texto_recibido}")
                 memoria.append(f"Tú: {respuesta_final}")
-                # Solo conservamos los últimos 4 elementos
                 historial_conversaciones[numero_remitente] = memoria[-4:]
                 
             else:
@@ -146,7 +140,6 @@ def webhook():
         except Exception as e:
             print(f"Error general en el webhook: {e}")
 
-        # Respondemos 200 OK instantáneo para que Meta no se moleste
         return jsonify({"status": "success"}), 200
 
 if __name__ == "__main__":
