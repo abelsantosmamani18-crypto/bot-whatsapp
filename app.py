@@ -58,7 +58,19 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             # CORRECCIÓN FINAL: Usamos el modelo gemini-3.8-flash que el propio Google exigió en el error
             url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key={GEMINI_API_KEY}"
             headers_gemini = {'Content-Type': 'application/json'}
-            prompt = f"Eres el cerrador de ventas de 'Crea con Melamina'. Responde de forma amable, persuasiva y corta a este mensaje de un prospecto: '{texto_recibido}'. Regla obligatoria: Genera tu respuesta en texto completamente limpio, sin usar simbolos, sin negritas, sin asteriscos, sin viñetas y sin caracteres especiales."
+            
+            # --- INICIO DEL CEREBRO EXTERNO ---
+            try:
+                # Leemos el archivo prompt_ventas.txt en cada petición
+                with open("prompt_ventas.txt", "r", encoding="utf-8") as archivo:
+                    instruccion_base = archivo.read().strip()
+            except Exception as e:
+                print(f"Error leyendo el prompt: {e}")
+                instruccion_base = "Eres un asistente de ventas."
+            
+            # Unimos la inteligencia comercial externa con el mensaje del prospecto
+            prompt = f"{instruccion_base}\n\nMensaje del prospecto: '{texto_recibido}'"
+            # --- FIN DEL CEREBRO EXTERNO ---
             
             payload_gemini = {
                 "contents": [{"parts": [{"text": prompt}]}]
