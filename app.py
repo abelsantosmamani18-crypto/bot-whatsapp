@@ -78,11 +78,11 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             # Unimos la inteligencia + la memoria reciente + el nuevo mensaje
             prompt = f"{instruccion_base}{texto_historial}\n\nMensaje actual del prospecto: '{texto_recibido}'"
             
-            # --- CANDADO 3: ASFIXIA FÍSICA DE TOKENS (Máximo 150) ---
+            # --- CANDADO 3: ASFIXIA FÍSICA DE TOKENS (Corregido a 350) ---
             payload_gemini = {
                 "contents": [{"parts": [{"text": prompt}]}],
                 "generationConfig": {
-                    "maxOutputTokens": 150  # Obliga a responder en max. ~100 palabras (Cierra rápido y barato)
+                    "maxOutputTokens": 350
                 }
             }
             
@@ -95,7 +95,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 # --- CANDADO 2: GUARDAR HISTORIA Y RECORTAR (Ventana Deslizante) ---
                 memoria.append(f"Cliente: {texto_recibido}")
                 memoria.append(f"Tú: {respuesta_final}")
-                # Solo conservamos los últimos 4 elementos (las últimas 2 preguntas y 2 respuestas)
+                # Solo conservamos los últimos 4 elementos
                 historial_conversaciones[numero_remitente] = memoria[-4:]
                 
             else:
@@ -129,8 +129,6 @@ def webhook():
                         value = change.get("value", {})
                         
                         # --- CANDADO 1: FILTRO DE EVENTOS BASURA ---
-                        # Si Meta nos manda un recibo de "leído" o "entregado", lo ignoramos
-                        # Esto evita cobros fantasma en Google Cloud.
                         if "statuses" in value:
                             continue 
                         
