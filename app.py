@@ -1,6 +1,7 @@
 import os
 import requests
 import threading
+import re
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -42,13 +43,48 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
         respuesta = requests.post(url, headers=headers, json=payload)
         if respuesta.status_code != 200:
             print("\n" + "="*50)
-            print(f"🛑 RECHAZO EXACTO DE META: {respuesta.text}")
+            print(f"🛑 RECHAZO EXACTO DE META (TEXTO): {respuesta.text}")
             print("="*50 + "\n")
             
         respuesta.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
         print(f"Error enviando mensaje a Meta: {e}")
+        return False
+
+# --- CANDADO 3: MOTOR UNIVERSAL MULTIMEDIA ---
+def enviar_multimedia_whatsapp(telefono_destino, tipo_media, media_id):
+    if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+        return False
+        
+    url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    tipo_lower = tipo_media.lower() # Meta exige minúsculas: video, image, document, audio
+    
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": telefono_destino,
+        "type": tipo_lower,
+        tipo_lower: {
+            "id": media_id
+        }
+    }
+    
+    try:
+        respuesta = requests.post(url, headers=headers, json=payload)
+        if respuesta.status_code != 200:
+            print("\n" + "="*50)
+            print(f"🛑 RECHAZO EXACTO DE META (MULTIMEDIA): {respuesta.text}")
+            print("="*50 + "\n")
+            
+        respuesta.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error enviando multimedia a Meta: {e}")
         return False
 
 def procesar_mensaje_gemini(numero_remitente, texto_recibido):
@@ -99,7 +135,20 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     else:
         print("ADVERTENCIA: No hay llave de Gemini configurada.")
 
-    enviar_mensaje_whatsapp(numero_remitente, respuesta_final)
+    # --- INTERCEPTOR MULTIMEDIA: Separa el archivo del texto ---
+    patron_multimedia = r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([a-zA-Z0-9]+)\]'
+    etiquetas_encontradas = re.findall(patron_multimedia, respuesta_final, re.IGNORECASE)
+    
+    # 1. Enviar primero los archivos detectados
+    for tipo_media, media_id in etiquetas_encontradas:
+        enviar_multimedia_whatsapp(numero_remitente, tipo_media, media_id)
+        
+    # 2. Limpiar la etiqueta del texto para que el cliente no la vea
+    texto_limpio = re.sub(patron_multimedia, '', respuesta_final, flags=re.IGNORECASE).strip()
+    
+    # 3. Enviar el texto final
+    if texto_limpio:
+        enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
