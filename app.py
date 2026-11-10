@@ -52,6 +52,45 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
         print(f"Error enviando mensaje a Meta: {e}")
         return False
 
+# --- CANDADO 3: MOTOR MULTIMEDIA UNIVERSAL (DESACOPLADO POR URL) ---
+def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre_archivo=""):
+    if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+        return False
+        
+    url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    
+    tipo_lower = tipo_media.lower() 
+    
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": telefono_destino,
+        "type": tipo_lower,
+        tipo_lower: {
+            "link": url_archivo
+        }
+    }
+
+    # WhatsApp exige un "filename" (nombre) cuando se envían documentos PDF por URL
+    if tipo_lower == "document" and nombre_archivo:
+        payload[tipo_lower]["filename"] = nombre_archivo
+    
+    try:
+        respuesta = requests.post(url, headers=headers, json=payload)
+        if respuesta.status_code != 200:
+            print("\n" + "="*50)
+            print(f"🛑 RECHAZO EXACTO DE META (MULTIMEDIA): {respuesta.text}")
+            print("="*50 + "\n")
+            
+        respuesta.raise_for_status()
+        return True
+    except requests.exceptions.RequestException as e:
+        print(f"Error enviando multimedia a Meta: {e}")
+        return False
+
 def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     global historial_conversaciones
     respuesta_final = "Lo siento, tengo un problema técnico temporal."
@@ -100,9 +139,21 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     else:
         print("ADVERTENCIA: No hay llave de Gemini configurada.")
 
-    # 3. Enviar el texto final directamente (CÓDIGO LIMPIO SIN INTERCEPTOR)
-    if respuesta_final:
-        enviar_mensaje_whatsapp(numero_remitente, respuesta_final)
+    # --- INTERCEPTOR MULTIMEDIA POR URL ---
+    patron_multimedia = r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]'
+    etiquetas_encontradas = re.findall(patron_multimedia, respuesta_final, re.IGNORECASE)
+    
+    # 1. Enviar primero los archivos detectados extrayendo la URL directa
+    for tipo_media, url_archivo in etiquetas_encontradas:
+        nombre_archivo = url_archivo.split("/")[-1] # Extrae el nombre final (ej. temario.pdf)
+        enviar_multimedia_whatsapp(numero_remitente, tipo_media, url_archivo, nombre_archivo)
+        
+    # 2. Limpiar la etiqueta del texto para que el cliente no la vea
+    texto_limpio = re.sub(patron_multimedia, '', respuesta_final, flags=re.IGNORECASE).strip()
+    
+    # 3. Enviar el texto final
+    if texto_limpio:
+        enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
