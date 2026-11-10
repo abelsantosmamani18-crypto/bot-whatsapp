@@ -53,7 +53,7 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
         return False
 
 # --- CANDADO 3: MOTOR MULTIMEDIA UNIVERSAL (DESACOPLADO POR URL) ---
-def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre_archivo=""):
+def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre_archivo="", caption=""):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
         return False
         
@@ -77,6 +77,10 @@ def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre
     # WhatsApp exige un "filename" (nombre) cuando se envían documentos PDF por URL
     if tipo_lower == "document" and nombre_archivo:
         payload[tipo_lower]["filename"] = nombre_archivo
+        
+    # Agregamos el texto como pie de foto (caption) si existe, para garantizar el orden visual
+    if caption and tipo_lower in ["video", "image", "document"]:
+        payload[tipo_lower]["caption"] = caption
     
     try:
         respuesta = requests.post(url, headers=headers, json=payload)
@@ -108,7 +112,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 print(f"Error leyendo el prompt: {e}")
                 instruccion_base = "Eres un asistente de ventas."
             
-            # --- CANDADO 2: RECUPERAR LOS ÚLTIMOS 4 MENSAJES ---
+            # --- CANDADO 2: RECUPERAR LOS ÚLTIMOS MENSAJES ---
             memoria = historial_conversaciones.get(numero_remitente, [])
             texto_historial = ""
             if memoria:
@@ -127,10 +131,10 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 data = res.json()
                 respuesta_final = data['candidates'][0]['content']['parts'][0]['text']
                 
-                # --- CANDADO 2: GUARDAR HISTORIA Y RECORTAR ---
+                # --- CANDADO 2: GUARDAR HISTORIA Y RECORTAR A 10 MENSAJES ---
                 memoria.append(f"Cliente: {texto_recibido}")
                 memoria.append(f"Tú: {respuesta_final}")
-                historial_conversaciones[numero_remitente] = memoria[-4:]
+                historial_conversaciones[numero_remitente] = memoria[-10:]
                 
             else:
                 print(f"Error real de Gemini: {res.text}")
@@ -143,17 +147,25 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     patron_multimedia = r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]'
     etiquetas_encontradas = re.findall(patron_multimedia, respuesta_final, re.IGNORECASE)
     
-    # 1. Enviar primero los archivos detectados extrayendo la URL directa
-    for tipo_media, url_archivo in etiquetas_encontradas:
-        nombre_archivo = url_archivo.split("/")[-1] # Extrae el nombre final (ej. temario.pdf)
-        enviar_multimedia_whatsapp(numero_remitente, tipo_media, url_archivo, nombre_archivo)
-        
-    # 2. Limpiar la etiqueta del texto para que el cliente no la vea
+    # 1. Limpiar la etiqueta del texto para que el cliente no la vea
     texto_limpio = re.sub(patron_multimedia, '', respuesta_final, flags=re.IGNORECASE).strip()
     
-    # 3. Enviar el texto final
-    if texto_limpio:
-        enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
+    # 2. Enviar archivo y texto juntos en un solo globo (Caption)
+    if etiquetas_encontradas:
+        tipo_media, url_archivo = etiquetas_encontradas[0] # Toma la primera etiqueta
+        url_archivo = url_archivo.strip()
+        nombre_archivo = url_archivo.split("/")[-1]
+        
+        # Envia el archivo con el texto pegado
+        exito = enviar_multimedia_whatsapp(numero_remitente, tipo_media, url_archivo, nombre_archivo, caption=texto_limpio)
+        
+        # Plan B de seguridad: Si Meta falla al enviar el archivo, envía el texto solo para no dejar al cliente en visto
+        if not exito and texto_limpio:
+            enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
+    else:
+        # Si la IA no mandó ningún archivo, simplemente envía el texto normal
+        if texto_limpio:
+            enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
