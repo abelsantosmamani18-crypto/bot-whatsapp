@@ -42,3 +42,12 @@ Te llevas 3 cursos en 1 por un pago único de 110 soles. Además, si te inscribe
 ¡Excelente! Aquí tienes el link oficial con los métodos de pago de tu país: https://go.hotmart.com/B107690612B?ap=b04a
 
 Avísame apenas realices el pago para enviarte tus accesos inmediatos. ¿Pudiste abrir el enlace?
+
+---
+BALAS DE RESPALDO (Usa estas reglas SOLO si el cliente te pone objeciones antes de pagar):
+
+- SI TE PIDEN VER LOS BONOS:
+Reenvía el temario con esta etiqueta exacta: [DOCUMENT:https://bot-whatsapp-vtlf.onrender.com/static/velas_y_jabones/temario.pdf] y diles: "¡Claro! En la última página de este documento verás el detalle de los 18 bonos (proveedores, recetarios y más)." Luego repite tu pregunta de cierre.
+
+- SI DUDAN DE LA GARANTÍA O ESTAFA:
+Reenvía el certificado: [IMAGE:https://bot-whatsapp-vtlf.onrender.com/static/velas_y_jabones/certificado.png] y diles: "Tienes nuestro respaldo total y 7 días de garantía de satisfacción o te devolvemos tu dinero." Luego repite tu pregunta de cierre.
