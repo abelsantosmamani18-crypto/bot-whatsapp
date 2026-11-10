@@ -143,27 +143,30 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     else:
         print("ADVERTENCIA: No hay llave de Gemini configurada.")
 
-    # --- INTERCEPTOR MULTIMEDIA POR URL ---
+    # --- INTERCEPTOR MULTIMEDIA INTELIGENTE (SOPORTA COMBOS DE ARCHIVOS) ---
     patron_multimedia = r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]'
     etiquetas_encontradas = re.findall(patron_multimedia, respuesta_final, re.IGNORECASE)
     
-    # 1. Limpiar la etiqueta del texto para que el cliente no la vea
+    # 1. Limpiar todas las etiquetas del texto
     texto_limpio = re.sub(patron_multimedia, '', respuesta_final, flags=re.IGNORECASE).strip()
     
-    # 2. Enviar archivo y texto juntos en un solo globo (Caption)
+    # 2. Despachar archivos dinámicamente según lo ordene el TXT
     if etiquetas_encontradas:
-        tipo_media, url_archivo = etiquetas_encontradas[0] # Toma la primera etiqueta
-        url_archivo = url_archivo.strip()
-        nombre_archivo = url_archivo.split("/")[-1]
-        
-        # Envia el archivo con el texto pegado
-        exito = enviar_multimedia_whatsapp(numero_remitente, tipo_media, url_archivo, nombre_archivo, caption=texto_limpio)
-        
-        # Plan B de seguridad: Si Meta falla al enviar el archivo, envía el texto solo para no dejar al cliente en visto
-        if not exito and texto_limpio:
-            enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
+        total_archivos = len(etiquetas_encontradas)
+        for i, (tipo_media, url_archivo) in enumerate(etiquetas_encontradas):
+            url_archivo = url_archivo.strip()
+            nombre_archivo = url_archivo.split("/")[-1]
+            
+            # Solo pegamos el texto (caption) al ÚLTIMO archivo del combo
+            es_ultimo = (i == total_archivos - 1)
+            caption_actual = texto_limpio if es_ultimo else ""
+            
+            exito = enviar_multimedia_whatsapp(numero_remitente, tipo_media, url_archivo, nombre_archivo, caption=caption_actual)
+            
+            # Respaldo: Si Meta falla al enviar el último archivo, enviar solo el texto
+            if es_ultimo and not exito and texto_limpio:
+                enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
     else:
-        # Si la IA no mandó ningún archivo, simplemente envía el texto normal
         if texto_limpio:
             enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
 
