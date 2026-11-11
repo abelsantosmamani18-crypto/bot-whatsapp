@@ -2,6 +2,7 @@ import os
 import requests
 import threading
 import re
+import time
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
@@ -16,9 +17,60 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 # --- CANDADO 2: MEMORIA RAM GRATUITA (Diccionario temporal) ---
 historial_conversaciones = {}
 
+# --- NUEVO: BUZÓN TEMPORAL PARA AGRUPAR MENSAJES ---
+buzon_mensajes = {}
+timers = {}
+ESPERA_SEGUNDOS = 4.0
+
 @app.route("/", methods=["GET"])
 def home():
     return "Servidor activo, conectado a WhatsApp y Gemini 3.8 Flash.", 200
+
+# --- NUEVO: FUNCIÓN PARA MOSTRAR "ESCRIBIENDO..." ---
+def enviar_estado_escribiendo(telefono_destino):
+    if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+        return False
+        
+    url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
+    headers = {
+        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "messaging_product": "whatsapp",
+        "to": telefono_destino,
+        "type": "contacts", # Se requiere este campo aunque enviemos estado
+        "text": {"body": ""}, # Se requiere un body vacío
+        # La forma correcta en la API v21 para el estado
+        "action": "typing_on"
+    }
+    
+    # Meta requiere que sea un payload especial para mark_as_read o typing_on
+    payload_typing = {
+        "messaging_product": "whatsapp",
+        "to": telefono_destino,
+        "type": "text", 
+        "text": {"body": ""} # Placeholder, Meta lo ignora si pasamos el sender_action abajo
+    }
+    
+    # Payload oficial según la documentación de Cloud API
+    payload_oficial = {
+        "messaging_product": "whatsapp",
+        "recipient_type": "individual",
+        "to": telefono_destino,
+        "type": "text",
+        "text": {"body": ""}
+    }
+    
+    # La API actual a veces prefiere que se haga a través de un campo "action" no documentado, 
+    # pero como es experimental, simplemente enviarlo no rompe la app. 
+    # Si la API v21 estricta lo rechaza silenciosamente, al menos no detiene el bot.
+    pass # Por ahora lo omitiremos si no tienes una plantilla oficial de "typing_on" activa, para evitar errores 400.
+
+# Usaremos una versión simplificada que Meta acepta para marcar mensajes leídos si es necesario, 
+# pero el "typing_on" no está nativamente soportado en todos los tiers de la API Cloud gratuita.
+# Lo dejaré preparado pero inactivo para que no te dé errores 400 de Meta, y me enfocaré en el temporizador.
+
 
 def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
@@ -74,11 +126,9 @@ def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre
         }
     }
 
-    # WhatsApp exige un "filename" (nombre) cuando se envían documentos PDF por URL
     if tipo_lower == "document" and nombre_archivo:
         payload[tipo_lower]["filename"] = nombre_archivo
         
-    # Agregamos el texto como pie de foto (caption) si existe, para garantizar el orden visual
     if caption and tipo_lower in ["video", "image", "document"]:
         payload[tipo_lower]["caption"] = caption
     
@@ -104,7 +154,6 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key={GEMINI_API_KEY}"
             headers_gemini = {'Content-Type': 'application/json'}
             
-            # 1. Leer el cerebro comercial (el prompt)
             try:
                 with open("prompt_ventas.txt", "r", encoding="utf-8") as archivo:
                     instruccion_base = archivo.read().strip()
@@ -112,13 +161,11 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 print(f"Error leyendo el prompt: {e}")
                 instruccion_base = "Eres un asistente de ventas."
             
-            # --- CANDADO 2: RECUPERAR LOS ÚLTIMOS MENSAJES ---
             memoria = historial_conversaciones.get(numero_remitente, [])
             texto_historial = ""
             if memoria:
                 texto_historial = "\n\nÚltimos mensajes de contexto:\n" + "\n".join(memoria)
             
-            # Unimos la inteligencia + la memoria reciente + el nuevo mensaje
             prompt = f"{instruccion_base}{texto_historial}\n\nMensaje actual del prospecto: '{texto_recibido}'"
             
             payload_gemini = {
@@ -131,7 +178,6 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 data = res.json()
                 respuesta_final = data['candidates'][0]['content']['parts'][0]['text']
                 
-                # --- CANDADO 2: GUARDAR HISTORIA Y RECORTAR A 10 MENSAJES ---
                 memoria.append(f"Cliente: {texto_recibido}")
                 memoria.append(f"Tú: {respuesta_final}")
                 historial_conversaciones[numero_remitente] = memoria[-10:]
@@ -143,35 +189,49 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     else:
         print("ADVERTENCIA: No hay llave de Gemini configurada.")
 
-    # --- INTERCEPTOR MULTIMEDIA INTELIGENTE (SOPORTA COMBOS DE ARCHIVOS) ---
     patron_multimedia = r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]'
     etiquetas_encontradas = re.findall(patron_multimedia, respuesta_final, re.IGNORECASE)
     
-    # 1. Limpiar todas las etiquetas del texto
     texto_limpio = re.sub(patron_multimedia, '', respuesta_final, flags=re.IGNORECASE).strip()
     
-    # 2. Despachar archivos dinámicamente según lo ordene el TXT
     if etiquetas_encontradas:
         total_archivos = len(etiquetas_encontradas)
         for i, (tipo_media, url_archivo) in enumerate(etiquetas_encontradas):
             url_archivo = url_archivo.strip()
             nombre_archivo = url_archivo.split("/")[-1]
             
-            # Solo pegamos el texto (caption) al ÚLTIMO archivo del combo
             es_ultimo = (i == total_archivos - 1)
             caption_actual = texto_limpio if es_ultimo else ""
             
             exito = enviar_multimedia_whatsapp(numero_remitente, tipo_media, url_archivo, nombre_archivo, caption=caption_actual)
             
-            # Respaldo: Si Meta falla al enviar el último archivo, enviar solo el texto
             if es_ultimo and not exito and texto_limpio:
                 enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
     else:
         if texto_limpio:
             enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
 
+# --- NUEVO: FUNCIÓN PARA DESPACHAR EL BUZÓN ACUMULADO ---
+def despachar_buzon(numero_remitente):
+    global buzon_mensajes, timers
+    
+    if numero_remitente in buzon_mensajes:
+        # Extraemos todos los mensajes que el cliente envió en esos 4 segundos
+        textos_agrupados = " ".join(buzon_mensajes[numero_remitente])
+        print(f"Procesando bloque agrupado de {numero_remitente}: {textos_agrupados}")
+        
+        # Limpiamos el buzón y el timer de este cliente
+        del buzon_mensajes[numero_remitente]
+        del timers[numero_remitente]
+        
+        # Le enviamos TODO JUNTO a la IA
+        procesar_mensaje_gemini(numero_remitente, textos_agrupados)
+
+
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
+    global buzon_mensajes, timers
+    
     if request.method == "GET":
         mode = request.args.get("hub.mode")
         token = request.args.get("hub.verify_token")
@@ -191,7 +251,6 @@ def webhook():
                     for change in entry.get("changes", []):
                         value = change.get("value", {})
                         
-                        # --- CANDADO 1: FILTRO DE EVENTOS BASURA ---
                         if "statuses" in value:
                             continue 
                         
@@ -201,10 +260,27 @@ def webhook():
                             
                             if mensaje["type"] == "text":
                                 texto_recibido = mensaje["text"]["body"]
-                                print(f"Mensaje de {numero_remitente}: {texto_recibido}")
+                                print(f"Mensaje entrante de {numero_remitente}: {texto_recibido}")
                                 
-                                hilo = threading.Thread(target=procesar_mensaje_gemini, args=(numero_remitente, texto_recibido))
-                                hilo.start()
+                                # --- NUEVA LÓGICA DE AGRUPACIÓN (4 SEGUNDOS) ---
+                                
+                                # 1. Si no existe un buzón para este cliente, lo creamos
+                                if numero_remitente not in buzon_mensajes:
+                                    buzon_mensajes[numero_remitente] = []
+                                
+                                # 2. Agregamos el texto nuevo al buzón
+                                buzon_mensajes[numero_remitente].append(texto_recibido)
+                                
+                                # 3. Si ya había un timer corriendo, lo cancelamos
+                                if numero_remitente in timers:
+                                    timers[numero_remitente].cancel()
+                                
+                                # 4. Iniciamos un NUEVO timer de 4 segundos
+                                timers[numero_remitente] = threading.Timer(ESPERA_SEGUNDOS, despachar_buzon, args=[numero_remitente])
+                                timers[numero_remitente].start()
+                                
+                                # NOTA: La función procesar_mensaje_gemini YA NO se llama inmediatamente.
+                                # Ahora espera 4 segundos de inactividad del usuario antes de ejecutarse.
 
         except Exception as e:
             print(f"Error general en el webhook: {e}")
