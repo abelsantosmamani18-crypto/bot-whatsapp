@@ -10,14 +10,10 @@ app = Flask(__name__)
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "bot_melamina_cejas_2026")
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
-
-# LLAVE DE GOOGLE PROTEGIDA
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-# --- CANDADO 2: MEMORIA RAM GRATUITA (Diccionario temporal) ---
+# --- MEMORIA RAM Y BUZÓN TEMPORAL ---
 historial_conversaciones = {}
-
-# --- NUEVO: BUZÓN TEMPORAL PARA AGRUPAR MENSAJES ---
 buzon_mensajes = {}
 timers = {}
 ESPERA_SEGUNDOS = 4.0
@@ -26,55 +22,8 @@ ESPERA_SEGUNDOS = 4.0
 def home():
     return "Servidor activo, conectado a WhatsApp y Gemini 3.8 Flash.", 200
 
-# --- NUEVO: FUNCIÓN PARA MOSTRAR "ESCRIBIENDO..." ---
-def enviar_estado_escribiendo(telefono_destino):
-    if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
-        return False
-        
-    url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
-    headers = {
-        "Authorization": f"Bearer {WHATSAPP_TOKEN}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "messaging_product": "whatsapp",
-        "to": telefono_destino,
-        "type": "contacts", # Se requiere este campo aunque enviemos estado
-        "text": {"body": ""}, # Se requiere un body vacío
-        # La forma correcta en la API v21 para el estado
-        "action": "typing_on"
-    }
-    
-    # Meta requiere que sea un payload especial para mark_as_read o typing_on
-    payload_typing = {
-        "messaging_product": "whatsapp",
-        "to": telefono_destino,
-        "type": "text", 
-        "text": {"body": ""} # Placeholder, Meta lo ignora si pasamos el sender_action abajo
-    }
-    
-    # Payload oficial según la documentación de Cloud API
-    payload_oficial = {
-        "messaging_product": "whatsapp",
-        "recipient_type": "individual",
-        "to": telefono_destino,
-        "type": "text",
-        "text": {"body": ""}
-    }
-    
-    # La API actual a veces prefiere que se haga a través de un campo "action" no documentado, 
-    # pero como es experimental, simplemente enviarlo no rompe la app. 
-    # Si la API v21 estricta lo rechaza silenciosamente, al menos no detiene el bot.
-    pass # Por ahora lo omitiremos si no tienes una plantilla oficial de "typing_on" activa, para evitar errores 400.
-
-# Usaremos una versión simplificada que Meta acepta para marcar mensajes leídos si es necesario, 
-# pero el "typing_on" no está nativamente soportado en todos los tiers de la API Cloud gratuita.
-# Lo dejaré preparado pero inactivo para que no te dé errores 400 de Meta, y me enfocaré en el temporizador.
-
-
 def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
-        print("ERROR: Faltan credenciales de WhatsApp.")
         return False
         
     url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
@@ -86,25 +35,17 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
         "messaging_product": "whatsapp",
         "to": telefono_destino,
         "type": "text",
-        "text": {
-            "body": texto_mensaje
-        }
+        "text": {"body": texto_mensaje}
     }
     
     try:
         respuesta = requests.post(url, headers=headers, json=payload)
-        if respuesta.status_code != 200:
-            print("\n" + "="*50)
-            print(f"🛑 RECHAZO EXACTO DE META (TEXTO): {respuesta.text}")
-            print("="*50 + "\n")
-            
         respuesta.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
         print(f"Error enviando mensaje a Meta: {e}")
         return False
 
-# --- CANDADO 3: MOTOR MULTIMEDIA UNIVERSAL (DESACOPLADO POR URL) ---
 def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre_archivo="", caption=""):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
         return False
@@ -121,9 +62,7 @@ def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre
         "messaging_product": "whatsapp",
         "to": telefono_destino,
         "type": tipo_lower,
-        tipo_lower: {
-            "link": url_archivo
-        }
+        tipo_lower: {"link": url_archivo}
     }
 
     if tipo_lower == "document" and nombre_archivo:
@@ -134,11 +73,6 @@ def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre
     
     try:
         respuesta = requests.post(url, headers=headers, json=payload)
-        if respuesta.status_code != 200:
-            print("\n" + "="*50)
-            print(f"🛑 RECHAZO EXACTO DE META (MULTIMEDIA): {respuesta.text}")
-            print("="*50 + "\n")
-            
         respuesta.raise_for_status()
         return True
     except requests.exceptions.RequestException as e:
@@ -158,7 +92,6 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 with open("prompt_ventas.txt", "r", encoding="utf-8") as archivo:
                     instruccion_base = archivo.read().strip()
             except Exception as e:
-                print(f"Error leyendo el prompt: {e}")
                 instruccion_base = "Eres un asistente de ventas."
             
             memoria = historial_conversaciones.get(numero_remitente, [])
@@ -181,13 +114,8 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 memoria.append(f"Cliente: {texto_recibido}")
                 memoria.append(f"Tú: {respuesta_final}")
                 historial_conversaciones[numero_remitente] = memoria[-10:]
-                
-            else:
-                print(f"Error real de Gemini: {res.text}")
         except Exception as e:
-            print(f"Error en la conexión directa a Gemini: {e}")
-    else:
-        print("ADVERTENCIA: No hay llave de Gemini configurada.")
+            print(f"Error en la conexión a Gemini: {e}")
 
     patron_multimedia = r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]'
     etiquetas_encontradas = re.findall(patron_multimedia, respuesta_final, re.IGNORECASE)
@@ -211,22 +139,16 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
         if texto_limpio:
             enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
 
-# --- NUEVO: FUNCIÓN PARA DESPACHAR EL BUZÓN ACUMULADO ---
 def despachar_buzon(numero_remitente):
     global buzon_mensajes, timers
     
     if numero_remitente in buzon_mensajes:
-        # Extraemos todos los mensajes que el cliente envió en esos 4 segundos
         textos_agrupados = " ".join(buzon_mensajes[numero_remitente])
-        print(f"Procesando bloque agrupado de {numero_remitente}: {textos_agrupados}")
         
-        # Limpiamos el buzón y el timer de este cliente
         del buzon_mensajes[numero_remitente]
         del timers[numero_remitente]
         
-        # Le enviamos TODO JUNTO a la IA
         procesar_mensaje_gemini(numero_remitente, textos_agrupados)
-
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
@@ -260,27 +182,18 @@ def webhook():
                             
                             if mensaje["type"] == "text":
                                 texto_recibido = mensaje["text"]["body"]
-                                print(f"Mensaje entrante de {numero_remitente}: {texto_recibido}")
                                 
-                                # --- NUEVA LÓGICA DE AGRUPACIÓN (4 SEGUNDOS) ---
-                                
-                                # 1. Si no existe un buzón para este cliente, lo creamos
+                                # --- LÓGICA DE AGRUPACIÓN (4 SEGUNDOS) SIN COMANDOS RAROS ---
                                 if numero_remitente not in buzon_mensajes:
                                     buzon_mensajes[numero_remitente] = []
                                 
-                                # 2. Agregamos el texto nuevo al buzón
                                 buzon_mensajes[numero_remitente].append(texto_recibido)
                                 
-                                # 3. Si ya había un timer corriendo, lo cancelamos
                                 if numero_remitente in timers:
                                     timers[numero_remitente].cancel()
                                 
-                                # 4. Iniciamos un NUEVO timer de 4 segundos
                                 timers[numero_remitente] = threading.Timer(ESPERA_SEGUNDOS, despachar_buzon, args=[numero_remitente])
                                 timers[numero_remitente].start()
-                                
-                                # NOTA: La función procesar_mensaje_gemini YA NO se llama inmediatamente.
-                                # Ahora espera 4 segundos de inactividad del usuario antes de ejecutarse.
 
         except Exception as e:
             print(f"Error general en el webhook: {e}")
