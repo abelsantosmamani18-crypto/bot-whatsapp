@@ -18,6 +18,9 @@ buzon_mensajes = {}
 timers = {}
 ESPERA_SEGUNDOS = 4.0
 
+# --- EL CANDADO DE SEGURIDAD (ESTO FALTABA) ---
+semaforo = threading.Lock()
+
 @app.route("/", methods=["GET"])
 def home():
     return "Servidor activo, conectado a WhatsApp y Gemini 3.8 Flash.", 200
@@ -94,7 +97,10 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             except Exception as e:
                 instruccion_base = "Eres un asistente de ventas."
             
-            memoria = historial_conversaciones.get(numero_remitente, [])
+            # Usamos el candado para leer la memoria sin que se crucen los datos
+            with semaforo:
+                memoria = historial_conversaciones.get(numero_remitente, [])
+                
             texto_historial = ""
             if memoria:
                 texto_historial = "\n\nÚltimos mensajes de contexto:\n" + "\n".join(memoria)
@@ -111,9 +117,11 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 data = res.json()
                 respuesta_final = data['candidates'][0]['content']['parts'][0]['text']
                 
-                memoria.append(f"Cliente: {texto_recibido}")
-                memoria.append(f"Tú: {respuesta_final}")
-                historial_conversaciones[numero_remitente] = memoria[-10:]
+                # Usamos el candado para guardar en la memoria
+                with semaforo:
+                    memoria.append(f"Cliente: {texto_recibido}")
+                    memoria.append(f"Tú: {respuesta_final}")
+                    historial_conversaciones[numero_remitente] = memoria[-10:]
         except Exception as e:
             print(f"Error en la conexión a Gemini: {e}")
 
@@ -142,13 +150,19 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
 def despachar_buzon(numero_remitente):
     global buzon_mensajes, timers
     
-    if numero_remitente in buzon_mensajes:
-        textos_agrupados = " ".join(buzon_mensajes[numero_remitente])
-        
-        del buzon_mensajes[numero_remitente]
-        del timers[numero_remitente]
-        
-        procesar_mensaje_gemini(numero_remitente, textos_agrupados)
+    # Bloqueamos el sistema un microsegundo para sacar los textos sin que entren nuevos
+    with semaforo:
+        if numero_remitente in buzon_mensajes:
+            textos_agrupados = " ".join(buzon_mensajes[numero_remitente])
+            
+            del buzon_mensajes[numero_remitente]
+            if numero_remitente in timers:
+                del timers[numero_remitente]
+        else:
+            return
+
+    # Enviamos los mensajes agrupados a la IA (ya fuera del candado)
+    procesar_mensaje_gemini(numero_remitente, textos_agrupados)
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
@@ -183,17 +197,18 @@ def webhook():
                             if mensaje["type"] == "text":
                                 texto_recibido = mensaje["text"]["body"]
                                 
-                                # --- LÓGICA DE AGRUPACIÓN (4 SEGUNDOS) SIN COMANDOS RAROS ---
-                                if numero_remitente not in buzon_mensajes:
-                                    buzon_mensajes[numero_remitente] = []
-                                
-                                buzon_mensajes[numero_remitente].append(texto_recibido)
-                                
-                                if numero_remitente in timers:
-                                    timers[numero_remitente].cancel()
-                                
-                                timers[numero_remitente] = threading.Timer(ESPERA_SEGUNDOS, despachar_buzon, args=[numero_remitente])
-                                timers[numero_remitente].start()
+                                # --- AQUÍ TRABAJA EL CANDADO PARA QUE NO SE CRUCEN ---
+                                with semaforo:
+                                    if numero_remitente not in buzon_mensajes:
+                                        buzon_mensajes[numero_remitente] = []
+                                    
+                                    buzon_mensajes[numero_remitente].append(texto_recibido)
+                                    
+                                    if numero_remitente in timers:
+                                        timers[numero_remitente].cancel()
+                                    
+                                    timers[numero_remitente] = threading.Timer(ESPERA_SEGUNDOS, despachar_buzon, args=[numero_remitente])
+                                    timers[numero_remitente].start()
 
         except Exception as e:
             print(f"Error general en el webhook: {e}")
