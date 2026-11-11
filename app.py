@@ -16,9 +16,11 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 historial_conversaciones = {}
 buzon_mensajes = {}
 timers = {}
+candados_clientes = {}
+mensajes_procesados = set()
 ESPERA_SEGUNDOS = 4.0
 
-# --- EL CANDADO DE SEGURIDAD (ESTO FALTABA) ---
+# --- EL CANDADO DE SEGURIDAD ---
 semaforo = threading.Lock()
 
 @app.route("/", methods=["GET"])
@@ -97,9 +99,9 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             except Exception as e:
                 instruccion_base = "Eres un asistente de ventas."
             
-            # Usamos el candado para leer la memoria sin que se crucen los datos
+            # Usamos el candado para leer una copia segura de la memoria
             with semaforo:
-                memoria = historial_conversaciones.get(numero_remitente, [])
+                memoria = list(historial_conversaciones.get(numero_remitente, []))
                 
             texto_historial = ""
             if memoria:
@@ -119,9 +121,10 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 
                 # Usamos el candado para guardar en la memoria
                 with semaforo:
-                    memoria.append(f"Cliente: {texto_recibido}")
-                    memoria.append(f"Tú: {respuesta_final}")
-                    historial_conversaciones[numero_remitente] = memoria[-10:]
+                    memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
+                    memoria_actual.append(f"Cliente: {texto_recibido}")
+                    memoria_actual.append(f"Tú: {respuesta_final}")
+                    historial_conversaciones[numero_remitente] = memoria_actual[-10:]
         except Exception as e:
             print(f"Error en la conexión a Gemini: {e}")
 
@@ -148,25 +151,31 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
 
 def despachar_buzon(numero_remitente):
-    global buzon_mensajes, timers
+    global buzon_mensajes, timers, candados_clientes
     
-    # Bloqueamos el sistema un microsegundo para sacar los textos sin que entren nuevos
+    # Candado exclusivo por número de cliente para evitar cruces mientras Gemini piensa
     with semaforo:
-        if numero_remitente in buzon_mensajes:
-            textos_agrupados = " ".join(buzon_mensajes[numero_remitente])
-            
-            del buzon_mensajes[numero_remitente]
-            if numero_remitente in timers:
-                del timers[numero_remitente]
-        else:
-            return
+        if numero_remitente not in candados_clientes:
+            candados_clientes[numero_remitente] = threading.Lock()
+        candado_cliente = candados_clientes[numero_remitente]
 
-    # Enviamos los mensajes agrupados a la IA (ya fuera del candado)
-    procesar_mensaje_gemini(numero_remitente, textos_agrupados)
+    with candado_cliente:
+        with semaforo:
+            if numero_remitente in buzon_mensajes and buzon_mensajes[numero_remitente]:
+                textos_agrupados = " ".join(buzon_mensajes[numero_remitente])
+                
+                del buzon_mensajes[numero_remitente]
+                if numero_remitente in timers:
+                    del timers[numero_remitente]
+            else:
+                return
+
+        # Enviamos los mensajes agrupados a la IA
+        procesar_mensaje_gemini(numero_remitente, textos_agrupados)
 
 @app.route("/webhook", methods=["GET", "POST"])
 def webhook():
-    global buzon_mensajes, timers
+    global buzon_mensajes, timers, mensajes_procesados
     
     if request.method == "GET":
         mode = request.args.get("hub.mode")
@@ -192,6 +201,7 @@ def webhook():
                         
                         if "messages" in value:
                             mensaje = value["messages"][0]
+                            id_mensaje = mensaje.get("id")
                             numero_remitente = mensaje["from"]
                             
                             if mensaje["type"] == "text":
@@ -199,6 +209,13 @@ def webhook():
                                 
                                 # --- AQUÍ TRABAJA EL CANDADO PARA QUE NO SE CRUCEN ---
                                 with semaforo:
+                                    if id_mensaje:
+                                        if id_mensaje in mensajes_procesados:
+                                            continue
+                                        mensajes_procesados.add(id_mensaje)
+                                        if len(mensajes_procesados) > 1000:
+                                            mensajes_procesados.clear()
+
                                     if numero_remitente not in buzon_mensajes:
                                         buzon_mensajes[numero_remitente] = []
                                     
