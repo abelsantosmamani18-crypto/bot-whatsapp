@@ -129,26 +129,42 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             print(f"Error en la conexión a Gemini: {e}")
 
     patron_multimedia = r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]'
-    etiquetas_encontradas = re.findall(patron_multimedia, respuesta_final, re.IGNORECASE)
+    partes = re.split(patron_multimedia, respuesta_final, flags=re.IGNORECASE)
     
-    texto_limpio = re.sub(patron_multimedia, '', respuesta_final, flags=re.IGNORECASE).strip()
-    
-    if etiquetas_encontradas:
-        total_archivos = len(etiquetas_encontradas)
-        for i, (tipo_media, url_archivo) in enumerate(etiquetas_encontradas):
-            url_archivo = url_archivo.strip()
-            nombre_archivo = url_archivo.split("/")[-1]
-            
-            es_ultimo = (i == total_archivos - 1)
-            caption_actual = texto_limpio if es_ultimo else ""
-            
-            exito = enviar_multimedia_whatsapp(numero_remitente, tipo_media, url_archivo, nombre_archivo, caption=caption_actual)
-            
-            if es_ultimo and not exito and texto_limpio:
-                enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
-    else:
+    if len(partes) == 1:
+        texto_limpio = partes[0].strip()
         if texto_limpio:
             enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
+    else:
+        texto_previo = partes[0].strip()
+        archivos = []
+        total_archivos = (len(partes) - 1) // 3
+        
+        for idx in range(total_archivos):
+            base = 1 + idx * 3
+            tipo_media = partes[base].strip()
+            url_archivo = partes[base + 1].strip()
+            caption_actual = partes[base + 2].strip()
+            if idx == 0 and texto_previo:
+                caption_actual = f"{texto_previo}\n\n{caption_actual}".strip()
+            archivos.append([tipo_media, url_archivo, caption_actual])
+            
+        # Si la IA puso 2 etiquetas seguidas arriba, reparte automáticamente el primer párrafo al Archivo 1 y el resto al Archivo 2
+        if len(archivos) == 2 and not archivos[0][2] and archivos[1][2]:
+            bloques = [b.strip() for b in re.split(r'\n\s*\n', archivos[1][2]) if b.strip()]
+            if len(bloques) >= 2:
+                archivos[0][2] = bloques[0]
+                archivos[1][2] = "\n\n".join(bloques[1:])
+
+        for i, (tipo_media, url_archivo, caption_actual) in enumerate(archivos):
+            nombre_archivo = url_archivo.split("/")[-1]
+            exito = enviar_multimedia_whatsapp(numero_remitente, tipo_media, url_archivo, nombre_archivo, caption=caption_actual)
+            
+            if not exito and caption_actual:
+                enviar_mensaje_whatsapp(numero_remitente, caption_actual)
+                
+            if i < len(archivos) - 1:
+                time.sleep(2.5)
 
 def despachar_buzon(numero_remitente):
     global buzon_mensajes, timers, candados_clientes
