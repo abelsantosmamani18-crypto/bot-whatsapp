@@ -135,17 +135,24 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     
     if etiquetas_encontradas:
         total_archivos = len(etiquetas_encontradas)
+        parrafos = [p.strip() for p in re.split(r'\n\s*\n', texto_limpio) if p.strip()]
         for i, (tipo_media, url_archivo) in enumerate(etiquetas_encontradas):
             url_archivo = url_archivo.strip()
             nombre_archivo = url_archivo.split("/")[-1]
             
             es_ultimo = (i == total_archivos - 1)
-            caption_actual = texto_limpio if es_ultimo else ""
+            if total_archivos >= 2 and len(parrafos) >= total_archivos:
+                caption_actual = parrafos[i] if not es_ultimo else "\n\n".join(parrafos[i:])
+            else:
+                caption_actual = texto_limpio if es_ultimo else ""
             
             exito = enviar_multimedia_whatsapp(numero_remitente, tipo_media, url_archivo, nombre_archivo, caption=caption_actual)
             
-            if es_ultimo and not exito and texto_limpio:
-                enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
+            if not es_ultimo:
+                time.sleep(1.5)
+            
+            if es_ultimo and not exito and caption_actual:
+                enviar_mensaje_whatsapp(numero_remitente, caption_actual)
     else:
         if texto_limpio:
             enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
