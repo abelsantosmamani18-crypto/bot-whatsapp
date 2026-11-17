@@ -99,7 +99,6 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             except Exception as e:
                 instruccion_base = "Eres un asistente de ventas."
             
-            # Usamos el candado para leer una copia segura de la memoria
             with semaforo:
                 memoria = list(historial_conversaciones.get(numero_remitente, []))
                 
@@ -119,8 +118,14 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 data = res.json()
                 respuesta_final = data['candidates'][0]['content']['parts'][0]['text']
                 
-                # Usamos el candado para guardar en la memoria
+                # --- AQUÍ ESTÁ EL INTERCEPTOR QUE RECUPERAMOS DE TU CHAT PERDIDO ---
                 with semaforo:
+                    if numero_remitente in buzon_mensajes and buzon_mensajes[numero_remitente]:
+                        # Si llegó otro mensaje mientras Gemini pensaba, abortamos esta respuesta.
+                        # Devolvemos el texto al buzón para que se agrupe todo y la IA "se quede pensando".
+                        buzon_mensajes[numero_remitente].insert(0, texto_recibido)
+                        return
+                        
                     memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
                     memoria_actual.append(f"Cliente: {texto_recibido}")
                     memoria_actual.append(f"Tú: {respuesta_final}")
@@ -160,7 +165,6 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
 def despachar_buzon(numero_remitente):
     global buzon_mensajes, timers, candados_clientes
     
-    # Candado exclusivo por número de cliente para evitar cruces mientras Gemini piensa
     with semaforo:
         if numero_remitente not in candados_clientes:
             candados_clientes[numero_remitente] = threading.Lock()
@@ -177,7 +181,6 @@ def despachar_buzon(numero_remitente):
             else:
                 return
 
-        # Enviamos los mensajes agrupados a la IA
         procesar_mensaje_gemini(numero_remitente, textos_agrupados)
 
 @app.route("/webhook", methods=["GET", "POST"])
@@ -214,7 +217,6 @@ def webhook():
                             if mensaje["type"] == "text":
                                 texto_recibido = mensaje["text"]["body"]
                                 
-                                # --- AQUÍ TRABAJA EL CANDADO PARA QUE NO SE CRUCEN ---
                                 with semaforo:
                                     if id_mensaje:
                                         if id_mensaje in mensajes_procesados:
