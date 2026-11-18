@@ -118,11 +118,9 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 data = res.json()
                 respuesta_final = data['candidates'][0]['content']['parts'][0]['text']
                 
-                # --- AQUÍ ESTÁ EL INTERCEPTOR QUE RECUPERAMOS DE TU CHAT PERDIDO ---
+                # --- INTERCEPTOR ANTI-DOBLE RESPUESTA ---
                 with semaforo:
                     if numero_remitente in buzon_mensajes and buzon_mensajes[numero_remitente]:
-                        # Si llegó otro mensaje mientras Gemini pensaba, abortamos esta respuesta.
-                        # Devolvemos el texto al buzón para que se agrupe todo y la IA "se quede pensando".
                         buzon_mensajes[numero_remitente].insert(0, texto_recibido)
                         return
                         
@@ -139,12 +137,6 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
         partes = re.split(patron_multimedia, respuesta_final, flags=re.IGNORECASE)
         texto_inicial = partes[0].strip()
         
-        # 1. Si hay texto ANTES de la primera etiqueta (ej. el precio), se envía primero arriba
-        if texto_inicial:
-            enviar_mensaje_whatsapp(numero_remitente, texto_inicial)
-            time.sleep(1.5)
-            
-        # 2. Emparejamos cada archivo con el texto que está justo debajo de su etiqueta
         bloques_media = []
         for idx in range(1, len(partes), 3):
             tipo_media = partes[idx].strip()
@@ -152,15 +144,25 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             texto_debajo = partes[idx + 2].strip() if (idx + 2) < len(partes) else ""
             bloques_media.append([tipo_media, url_archivo, texto_debajo])
             
-        # Salvavidas por si la IA pega dos etiquetas seguidas y deja los párrafos al final
+        # Salvavidas 1: Si envía un solo archivo y puso el texto arriba dejando vacío abajo, lo une debajo del archivo
+        if len(bloques_media) == 1 and texto_inicial and not bloques_media[0][2]:
+            bloques_media[0][2] = texto_inicial
+            texto_inicial = ""
+            
+        # Salvavidas 2: Si envía 2 archivos seguidos y dejó los párrafos juntos al final, los reparte en orden
         if len(bloques_media) >= 2 and not bloques_media[0][2] and bloques_media[-1][2]:
             parrafos_finales = [p.strip() for p in re.split(r'\n\s*\n', bloques_media[-1][2]) if p.strip()]
             if len(parrafos_finales) >= len(bloques_media):
                 for i in range(len(bloques_media) - 1):
                     bloques_media[i][2] = parrafos_finales[i]
                 bloques_media[-1][2] = "\n\n".join(parrafos_finales[len(bloques_media) - 1:])
+
+        # 1. Si hay texto introductorio (como el precio arriba en el Paso 4), lo envía primero en su burbuja
+        if texto_inicial:
+            enviar_mensaje_whatsapp(numero_remitente, texto_inicial)
+            time.sleep(2.5)
                 
-        # 3. Enviamos cada archivo en orden con su respectiva descripción debajo
+        # 2. Envía cada archivo con su propio texto debajo y 4 segundos entre archivos para que Meta respete el orden
         total_archivos = len(bloques_media)
         for i, (tipo_media, url_archivo, caption_actual) in enumerate(bloques_media):
             nombre_archivo = url_archivo.split("/")[-1]
@@ -178,7 +180,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                 enviar_mensaje_whatsapp(numero_remitente, caption_actual)
                 
             if not es_ultimo:
-                time.sleep(1.5)
+                time.sleep(4.0)
     else:
         texto_limpio = respuesta_final.strip()
         if texto_limpio:
