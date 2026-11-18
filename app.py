@@ -134,31 +134,53 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
             print(f"Error en la conexión a Gemini: {e}")
 
     patron_multimedia = r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]'
-    etiquetas_encontradas = re.findall(patron_multimedia, respuesta_final, re.IGNORECASE)
     
-    texto_limpio = re.sub(patron_multimedia, '', respuesta_final, flags=re.IGNORECASE).strip()
-    
-    if etiquetas_encontradas:
-        total_archivos = len(etiquetas_encontradas)
-        parrafos = [p.strip() for p in re.split(r'\n\s*\n', texto_limpio) if p.strip()]
-        for i, (tipo_media, url_archivo) in enumerate(etiquetas_encontradas):
-            url_archivo = url_archivo.strip()
+    if re.search(patron_multimedia, respuesta_final, flags=re.IGNORECASE):
+        partes = re.split(patron_multimedia, respuesta_final, flags=re.IGNORECASE)
+        texto_inicial = partes[0].strip()
+        
+        # 1. Si hay texto ANTES de la primera etiqueta (ej. el precio), se envía primero arriba
+        if texto_inicial:
+            enviar_mensaje_whatsapp(numero_remitente, texto_inicial)
+            time.sleep(1.5)
+            
+        # 2. Emparejamos cada archivo con el texto que está justo debajo de su etiqueta
+        bloques_media = []
+        for idx in range(1, len(partes), 3):
+            tipo_media = partes[idx].strip()
+            url_archivo = partes[idx + 1].strip()
+            texto_debajo = partes[idx + 2].strip() if (idx + 2) < len(partes) else ""
+            bloques_media.append([tipo_media, url_archivo, texto_debajo])
+            
+        # Salvavidas por si la IA pega dos etiquetas seguidas y deja los párrafos al final
+        if len(bloques_media) >= 2 and not bloques_media[0][2] and bloques_media[-1][2]:
+            parrafos_finales = [p.strip() for p in re.split(r'\n\s*\n', bloques_media[-1][2]) if p.strip()]
+            if len(parrafos_finales) >= len(bloques_media):
+                for i in range(len(bloques_media) - 1):
+                    bloques_media[i][2] = parrafos_finales[i]
+                bloques_media[-1][2] = "\n\n".join(parrafos_finales[len(bloques_media) - 1:])
+                
+        # 3. Enviamos cada archivo en orden con su respectiva descripción debajo
+        total_archivos = len(bloques_media)
+        for i, (tipo_media, url_archivo, caption_actual) in enumerate(bloques_media):
             nombre_archivo = url_archivo.split("/")[-1]
-            
             es_ultimo = (i == total_archivos - 1)
-            if total_archivos >= 2 and len(parrafos) >= total_archivos:
-                caption_actual = parrafos[i] if not es_ultimo else "\n\n".join(parrafos[i:])
-            else:
-                caption_actual = texto_limpio if es_ultimo else ""
             
-            exito = enviar_multimedia_whatsapp(numero_remitente, tipo_media, url_archivo, nombre_archivo, caption=caption_actual)
+            exito = enviar_multimedia_whatsapp(
+                numero_remitente,
+                tipo_media,
+                url_archivo,
+                nombre_archivo,
+                caption=caption_actual
+            )
             
+            if not exito and caption_actual:
+                enviar_mensaje_whatsapp(numero_remitente, caption_actual)
+                
             if not es_ultimo:
                 time.sleep(1.5)
-            
-            if es_ultimo and not exito and caption_actual:
-                enviar_mensaje_whatsapp(numero_remitente, caption_actual)
     else:
+        texto_limpio = respuesta_final.strip()
         if texto_limpio:
             enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
 
