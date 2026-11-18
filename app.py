@@ -25,7 +25,7 @@ semaforo = threading.Lock()
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Servidor activo, conectado a WhatsApp y Gemini 3.8 Flash.", 200
+    return "Servidor activo, conectado a WhatsApp y Gemini 3.5 Flash-Lite.", 200
 
 def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
@@ -90,7 +90,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
     
     if GEMINI_API_KEY:
         try:
-            url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.8-flash:generateContent?key={GEMINI_API_KEY}"
+            url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
             headers_gemini = {'Content-Type': 'application/json'}
             
             try:
