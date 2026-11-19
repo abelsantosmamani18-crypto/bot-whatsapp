@@ -18,7 +18,7 @@ buzon_mensajes = {}
 timers = {}
 candados_clientes = {}
 mensajes_procesados = set()
-ESPERA_SEGUNDOS = 4.0
+ESPERA_SEGUNDOS = 5.0
 
 # --- EL CANDADO DE SEGURIDAD ---
 semaforo = threading.Lock()
@@ -127,7 +127,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido):
                     memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
                     memoria_actual.append(f"Cliente: {texto_recibido}")
                     memoria_actual.append(f"Tú: {respuesta_final}")
-                    historial_conversaciones[numero_remitente] = memoria_actual[-10:]
+                    historial_conversaciones[numero_remitente] = memoria_actual[-12:]
         except Exception as e:
             print(f"Error en la conexión a Gemini: {e}")
 
