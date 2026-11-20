@@ -1,9 +1,11 @@
 import os
 import re
+import sys
 import time
 import base64
 import secrets
 import threading
+import traceback
 import requests
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -11,14 +13,11 @@ from flask import Flask, request, jsonify, render_template, session, Response
 
 app = Flask(__name__)
 
-# --- VARIABLES DE ENTORNO EXISTENTES (INTACTAS) ---
+# --- VARIABLES DE ENTORNO (BASE ORIGINAL + ACCESO AL PANEL) ---
 VERIFY_TOKEN = os.environ.get("VERIFY_TOKEN", "bot_melamina_cejas_2026")
 WHATSAPP_TOKEN = os.environ.get("WHATSAPP_TOKEN")
 PHONE_NUMBER_ID = os.environ.get("PHONE_NUMBER_ID")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-
-# --- VARIABLES NUEVAS (MINI WEB + GOOGLE SHEETS) ---
-SHEETS_WEBHOOK_URL = os.environ.get("SHEETS_WEBHOOK_URL", "").strip()
 PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD", "").strip()
 
 app.secret_key = os.environ.get("FLASK_SECRET_KEY") or f"{PANEL_PASSWORD}_creas_y_aprendes_secret_2026"
@@ -28,8 +27,9 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 TZ_PERU = timezone(timedelta(hours=-5))
 MIME_SOPORTADOS_GEMINI = {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
 MAX_BYTES_GEMINI = 5 * 1024 * 1024  # 5 MB máximo para proteger RAM en Render
+URL_VIDEO_GANCHO = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/video-gancho.mp4"
 
-# --- MEMORIA RAM Y BUZÓN TEMPORAL ---
+# --- MEMORIA RAM Y BUZÓN TEMPORAL (BASE ORIGINAL) ---
 historial_conversaciones = {}
 buzon_mensajes = {}
 buzon_media = {}
@@ -38,7 +38,7 @@ candados_clientes = {}
 mensajes_procesados = set()
 ESPERA_SEGUNDOS = 5.0
 
-# --- MEMORIA DEL PANEL EN VIVO ---
+# --- MEMORIA DEL PANEL EN VIVO (100% RAM, SIN GOOGLE SHEETS) ---
 clientes_panel = {}
 mensajes_panel = {}
 
@@ -48,6 +48,11 @@ semaforo = threading.Lock()
 
 def ahora_peru():
     return datetime.now(TZ_PERU).strftime("%d/%m/%Y %H:%M")
+
+
+def log(mensaje):
+    """Imprime directo a stderr con flush inmediato para visibilidad real en Render."""
+    print(f"[{datetime.now(TZ_PERU).strftime('%H:%M:%S')}] {mensaje}", file=sys.stderr, flush=True)
 
 
 def limpiar_etiquetas_para_panel(texto):
@@ -66,24 +71,8 @@ def esta_bot_pausado(telefono):
         return bool(cliente and cliente.get("estado_bot") == "PAUSADO")
 
 
-# --- SINCRONIZACIÓN ASÍNCRONA CON GOOGLE SHEETS (NUNCA FRENA A CARLA) ---
-def _post_sheets(payload):
-    if not SHEETS_WEBHOOK_URL:
-        return
-    try:
-        requests.post(SHEETS_WEBHOOK_URL, json=payload, timeout=15)
-    except Exception as e:
-        print(f"Aviso Sheets (segundo plano): {e}")
-
-
-def enviar_a_sheets_async(payload):
-    if not SHEETS_WEBHOOK_URL:
-        return
-    threading.Thread(target=_post_sheets, args=(payload,), daemon=True).start()
-
-
 def registrar_interaccion(telefono, remitente, texto, tipo="text", media_id="", nombre="", forzar_etapa=None):
-    """Guarda en la memoria del panel y dispara guardado en segundo plano a Google Sheets."""
+    """Guarda instantáneamente en la memoria RAM del panel (sin red ni hilos extra)."""
     fecha = ahora_peru()
     orden = time.time()
     remitente_norm = remitente.upper()
@@ -135,104 +124,6 @@ def registrar_interaccion(telefono, remitente, texto, tipo="text", media_id="", 
         if len(mensajes_panel[telefono]) > 150:
             mensajes_panel[telefono] = mensajes_panel[telefono][-150:]
 
-        payload_sheets = {
-            "accion": "registrar_mensaje",
-            "fecha_hora": fecha,
-            "telefono": telefono,
-            "nombre": cli["nombre"],
-            "remitente": remitente_norm,
-            "tipo": tipo,
-            "contenido": texto,
-            "media_ref": media_id,
-            "estado_bot": cli["estado_bot"],
-            "etapa": cli["etapa"],
-            "ultimo_mensaje": cli["ultimo_mensaje"],
-            "ultima_fecha": fecha,
-            "notas": cli["notas"],
-        }
-
-    enviar_a_sheets_async(payload_sheets)
-
-
-def cargar_desde_sheets():
-    """Recupera clientes y últimos mensajes al arrancar el servidor en Render."""
-    if not SHEETS_WEBHOOK_URL:
-        return
-    try:
-        res = requests.get(SHEETS_WEBHOOK_URL, timeout=15)
-        if res.status_code != 200:
-            return
-        data = res.json()
-        if not data.get("ok"):
-            return
-
-        clientes_cargados = data.get("clientes", [])
-        mensajes_cargados = data.get("mensajes", [])
-
-        with semaforo:
-            base_orden = time.time() - 100000
-            for idx, c in enumerate(clientes_cargados):
-                tel = str(c.get("telefono", "")).strip()
-                if not tel:
-                    continue
-                if tel not in clientes_panel:
-                    clientes_panel[tel] = {
-                        "telefono": tel,
-                        "nombre": str(c.get("nombre", "") or tel),
-                        "estado_bot": str(c.get("estado_bot", "ACTIVO") or "ACTIVO").upper(),
-                        "etapa": str(c.get("etapa", "Nuevo") or "Nuevo"),
-                        "ultimo_mensaje": str(c.get("ultimo_mensaje", "") or ""),
-                        "ultima_fecha": str(c.get("ultima_fecha", "") or ""),
-                        "notas": str(c.get("notas", "") or ""),
-                        "no_leidos": 0,
-                        "_orden": base_orden + idx,
-                    }
-
-            msgs_por_tel = {}
-            hist_por_tel = {}
-            for idx, m in enumerate(mensajes_cargados):
-                tel = str(m.get("telefono", "")).strip()
-                if not tel:
-                    continue
-                rem_raw = str(m.get("remitente", "CLIENTE")).strip().upper()
-                if rem_raw not in ("CLIENTE", "CARLA", "HUMANO"):
-                    rem_raw = "CLIENTE"
-                tipo = str(m.get("tipo", "text") or "text")
-                contenido = str(m.get("contenido", "") or "")
-                media_ref = str(m.get("media_ref", "") or "")
-                fecha_h = str(m.get("fecha_hora", "") or "")
-
-                msgs_por_tel.setdefault(tel, []).append({
-                    "remitente": rem_raw,
-                    "texto": contenido,
-                    "fecha": fecha_h,
-                    "media_id": media_ref,
-                    "media_type": tipo if media_ref else "text",
-                })
-
-                prefijo = "Cliente" if rem_raw == "CLIENTE" else "Tú"
-                if contenido:
-                    hist_por_tel.setdefault(tel, []).append(f"{prefijo}: {contenido}")
-
-                if tel in clientes_panel:
-                    clientes_panel[tel]["_orden"] = max(clientes_panel[tel]["_orden"], base_orden + 10000 + idx)
-
-            for tel, lista_m in msgs_por_tel.items():
-                actuales = mensajes_panel.get(tel, [])
-                mensajes_panel[tel] = (lista_m + actuales)[-150:]
-
-            for tel, lista_h in hist_por_tel.items():
-                if tel not in historial_conversaciones:
-                    historial_conversaciones[tel] = lista_h[-12:]
-
-        print(f"Sheets cargado: {len(clientes_cargados)} clientes, {len(mensajes_cargados)} mensajes.")
-    except Exception as e:
-        print(f"Aviso cargando Sheets al inicio: {e}")
-
-
-# Carga inicial en segundo plano para no demorar el arranque de Gunicorn
-threading.Thread(target=cargar_desde_sheets, daemon=True).start()
-
 
 # --- FUNCIONES DE WHATSAPP CLOUD API ---
 def descargar_media_whatsapp(media_id):
@@ -244,7 +135,7 @@ def descargar_media_whatsapp(media_id):
         meta_res = requests.get(
             f"https://graph.facebook.com/v21.0/{media_id}",
             headers=headers,
-            timeout=10,
+            timeout=(10, 15),
         )
         meta_res.raise_for_status()
         meta_data = meta_res.json()
@@ -253,16 +144,17 @@ def descargar_media_whatsapp(media_id):
         if not media_url:
             return None, None
 
-        file_res = requests.get(media_url, headers=headers, timeout=15)
+        file_res = requests.get(media_url, headers=headers, timeout=(10, 20))
         file_res.raise_for_status()
         return file_res.content, mime_type
     except Exception as e:
-        print(f"Error descargando media de Meta ({media_id}): {e}")
+        log(f"[META MEDIA ERROR] ({media_id}): {e}")
         return None, None
 
 
 def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+        log("[META ERROR] Falta WHATSAPP_TOKEN o PHONE_NUMBER_ID.")
         return False
 
     url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
@@ -278,16 +170,19 @@ def enviar_mensaje_whatsapp(telefono_destino, texto_mensaje):
     }
 
     try:
-        respuesta = requests.post(url, headers=headers, json=payload, timeout=15)
-        respuesta.raise_for_status()
+        respuesta = requests.post(url, headers=headers, json=payload, timeout=(10, 15))
+        if respuesta.status_code >= 400:
+            log(f"[META TEXTO ERROR] HTTP {respuesta.status_code}: {respuesta.text[:250]}")
+            return False
         return True
     except requests.exceptions.RequestException as e:
-        print(f"Error enviando mensaje a Meta: {e}")
+        log(f"[META TEXTO EXCEPCION] {e}")
         return False
 
 
 def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre_archivo="", caption=""):
     if not WHATSAPP_TOKEN or not PHONE_NUMBER_ID:
+        log("[META ERROR] Falta WHATSAPP_TOKEN o PHONE_NUMBER_ID.")
         return False
 
     url = f"https://graph.facebook.com/v21.0/{PHONE_NUMBER_ID}/messages"
@@ -312,11 +207,13 @@ def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre
         payload[tipo_lower]["caption"] = caption
 
     try:
-        respuesta = requests.post(url, headers=headers, json=payload, timeout=20)
-        respuesta.raise_for_status()
+        respuesta = requests.post(url, headers=headers, json=payload, timeout=(10, 20))
+        if respuesta.status_code >= 400:
+            log(f"[META MEDIA ERROR] HTTP {respuesta.status_code}: {respuesta.text[:250]}")
+            return False
         return True
     except requests.exceptions.RequestException as e:
-        print(f"Error enviando multimedia a Meta: {e}")
+        log(f"[META MEDIA EXCEPCION] {e}")
         return False
 
 
@@ -337,7 +234,8 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
             try:
                 with open("prompt_ventas.txt", "r", encoding="utf-8") as archivo:
                     instruccion_base = archivo.read().strip()
-            except Exception:
+            except Exception as e:
+                log(f"[PROMPT ERROR] No se pudo leer prompt_ventas.txt: {e}")
                 instruccion_base = "Eres un asistente de ventas."
 
             with semaforo:
@@ -373,107 +271,151 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
             prompt = f"{instruccion_base}{texto_historial}{nota_vision}\n\nMensaje actual del prospecto: '{texto_recibido}'"
 
             parts_payload = [{"text": prompt}] + partes_adjuntas
-            payload_gemini = {"contents": [{"parts": parts_payload}]}
+            payload_gemini = {
+                "contents": [{"parts": parts_payload}],
+                "generationConfig": {"temperature": 0.2},
+            }
 
-            res = requests.post(url_gemini, headers=headers_gemini, json=payload_gemini, timeout=30)
+            res = None
+            for intento in range(2):
+                try:
+                    res = requests.post(url_gemini, headers=headers_gemini, json=payload_gemini, timeout=(10, 30))
+                    if res.status_code == 200:
+                        break
+                    log(f"[GEMINI ERROR] Intento {intento + 1} HTTP {res.status_code}: {res.text[:250]}")
+                    if res.status_code in (429, 500, 502, 503, 504) and intento == 0:
+                        time.sleep(2.0)
+                        continue
+                    break
+                except requests.exceptions.RequestException as e:
+                    log(f"[GEMINI EXCEPCION] Intento {intento + 1}: {e}")
+                    if intento == 0:
+                        time.sleep(2.0)
+                        continue
 
             # Respaldo automático: si falla con adjunto, reintenta solo con texto para no colgar el chat
-            if res.status_code != 200 and partes_adjuntas:
-                print(f"Aviso Gemini con adjunto ({res.status_code}), reintentando solo texto.")
-                payload_fallback = {"contents": [{"parts": [{"text": prompt}]}]}
-                res = requests.post(url_gemini, headers=headers_gemini, json=payload_fallback, timeout=25)
+            if (res is None or res.status_code != 200) and partes_adjuntas:
+                log("[GEMINI] Reintentando solo con texto tras fallo con adjunto.")
+                payload_fallback = {
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.2},
+                }
+                res = requests.post(url_gemini, headers=headers_gemini, json=payload_fallback, timeout=(10, 25))
 
-            if res.status_code == 200:
+            if res is not None and res.status_code == 200:
                 data = res.json()
-                respuesta_final = data["candidates"][0]["content"]["parts"][0]["text"]
+                candidates = data.get("candidates") or []
+                parts = (candidates[0].get("content", {}).get("parts") or []) if candidates else []
+                texto_generado = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+
+                if texto_generado:
+                    respuesta_final = texto_generado
+                    # Salvavidas de video de bienvenida: si Gemini olvidó la etiqueta [VIDEO:...], la inyecta
+                    if "video de arriba" in respuesta_final.lower() and "[VIDEO:" not in respuesta_final.upper():
+                        respuesta_final = f"[VIDEO:{URL_VIDEO_GANCHO}]\n{respuesta_final}"
+                        log(f"[SALVAVIDAS VIDEO] Etiqueta de video-gancho inyectada para {numero_remitente}")
+                else:
+                    log(f"[GEMINI AVISO] Respuesta vacía: {str(data)[:250]}")
 
                 # Si pausaste a Carla justo mientras Gemini pensaba, no envía nada
                 if esta_bot_pausado(numero_remitente):
                     return
 
-                # --- INTERCEPTOR ANTI-DOBLE RESPUESTA (INTACTO) ---
+                # --- INTERCEPTOR ANTI-DOBLE RESPUESTA (BLINDADO) ---
                 with semaforo:
                     if numero_remitente in buzon_mensajes and buzon_mensajes[numero_remitente]:
                         buzon_mensajes[numero_remitente].insert(0, texto_recibido)
                         if media_recibida:
                             buzon_media.setdefault(numero_remitente, [])
                             buzon_media[numero_remitente] = media_recibida + buzon_media[numero_remitente]
+                        if numero_remitente not in timers or not timers[numero_remitente].is_alive():
+                            nuevo_timer = threading.Timer(
+                                ESPERA_SEGUNDOS, despachar_buzon, args=[numero_remitente]
+                            )
+                            nuevo_timer.daemon = True
+                            timers[numero_remitente] = nuevo_timer
+                            nuevo_timer.start()
                         return
 
                     memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
                     memoria_actual.append(f"Cliente: {texto_recibido}")
                     memoria_actual.append(f"Tú: {respuesta_final}")
                     historial_conversaciones[numero_remitente] = memoria_actual[-12:]
-        except Exception as e:
-            print(f"Error en la conexión a Gemini: {e}")
+        except Exception:
+            log(f"[GEMINI ERROR GENERAL] {traceback.format_exc()}")
+    else:
+        log("[GEMINI ERROR] GEMINI_API_KEY no configurada.")
 
     if esta_bot_pausado(numero_remitente):
         return
 
-    patron_multimedia = r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]'
+    try:
+        patron_multimedia = r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]'
 
-    if re.search(patron_multimedia, respuesta_final, flags=re.IGNORECASE):
-        partes = re.split(patron_multimedia, respuesta_final, flags=re.IGNORECASE)
-        texto_inicial = partes[0].strip()
+        if re.search(patron_multimedia, respuesta_final, flags=re.IGNORECASE):
+            partes = re.split(patron_multimedia, respuesta_final, flags=re.IGNORECASE)
+            texto_inicial = partes[0].strip()
 
-        bloques_media = []
-        for idx in range(1, len(partes), 3):
-            tipo_media = partes[idx].strip()
-            url_archivo = partes[idx + 1].strip()
-            texto_debajo = partes[idx + 2].strip() if (idx + 2) < len(partes) else ""
-            bloques_media.append([tipo_media, url_archivo, texto_debajo])
+            bloques_media = []
+            for idx in range(1, len(partes), 3):
+                tipo_media = partes[idx].strip()
+                url_archivo = partes[idx + 1].strip()
+                texto_debajo = partes[idx + 2].strip() if (idx + 2) < len(partes) else ""
+                bloques_media.append([tipo_media, url_archivo, texto_debajo])
 
-        # Salvavidas 1: Si envía un solo archivo y puso el texto arriba dejando vacío abajo, lo une debajo del archivo
-        if len(bloques_media) == 1 and texto_inicial and not bloques_media[0][2]:
-            bloques_media[0][2] = texto_inicial
-            texto_inicial = ""
+            # Salvavidas 1: Si envía un solo archivo y puso el texto arriba dejando vacío abajo, lo une debajo del archivo
+            if len(bloques_media) == 1 and texto_inicial and not bloques_media[0][2]:
+                bloques_media[0][2] = texto_inicial
+                texto_inicial = ""
 
-        # Salvavidas 2: Si envía 2 archivos seguidos y dejó los párrafos juntos al final, los reparte en orden
-        if len(bloques_media) >= 2 and not bloques_media[0][2] and bloques_media[-1][2]:
-            parrafos_finales = [p.strip() for p in re.split(r'\n\s*\n', bloques_media[-1][2]) if p.strip()]
-            if len(parrafos_finales) >= len(bloques_media):
-                for i in range(len(bloques_media) - 1):
-                    bloques_media[i][2] = parrafos_finales[i]
-                bloques_media[-1][2] = "\n\n".join(parrafos_finales[len(bloques_media) - 1:])
+            # Salvavidas 2: Si envía 2 archivos seguidos y dejó los párrafos juntos al final, los reparte en orden
+            if len(bloques_media) >= 2 and not bloques_media[0][2] and bloques_media[-1][2]:
+                parrafos_finales = [p.strip() for p in re.split(r'\n\s*\n', bloques_media[-1][2]) if p.strip()]
+                if len(parrafos_finales) >= len(bloques_media):
+                    for i in range(len(bloques_media) - 1):
+                        bloques_media[i][2] = parrafos_finales[i]
+                    bloques_media[-1][2] = "\n\n".join(parrafos_finales[len(bloques_media) - 1:])
 
-        # 1. Si hay texto introductorio (como el precio arriba en el Paso 4), lo envía primero en su burbuja
-        if texto_inicial:
-            enviar_mensaje_whatsapp(numero_remitente, texto_inicial)
-            time.sleep(2.5)
+            # 1. Si hay texto introductorio (como el precio arriba en el Paso 4), lo envía primero en su burbuja
+            if texto_inicial:
+                enviar_mensaje_whatsapp(numero_remitente, texto_inicial)
+                time.sleep(2.5)
 
-        # 2. Envía cada archivo con su propio texto debajo y 4 segundos entre archivos para que Meta respete el orden
-        total_archivos = len(bloques_media)
-        for i, (tipo_media, url_archivo, caption_actual) in enumerate(bloques_media):
-            nombre_archivo = url_archivo.split("/")[-1]
-            es_ultimo = (i == total_archivos - 1)
+            # 2. Envía cada archivo con su propio texto debajo y 4 segundos entre archivos para que Meta respete el orden
+            total_archivos = len(bloques_media)
+            for i, (tipo_media, url_archivo, caption_actual) in enumerate(bloques_media):
+                nombre_archivo = url_archivo.split("/")[-1]
+                es_ultimo = (i == total_archivos - 1)
 
-            exito = enviar_multimedia_whatsapp(
-                numero_remitente,
-                tipo_media,
-                url_archivo,
-                nombre_archivo,
-                caption=caption_actual,
-            )
+                exito = enviar_multimedia_whatsapp(
+                    numero_remitente,
+                    tipo_media,
+                    url_archivo,
+                    nombre_archivo,
+                    caption=caption_actual,
+                )
 
-            if not exito and caption_actual:
-                enviar_mensaje_whatsapp(numero_remitente, caption_actual)
+                if not exito and caption_actual:
+                    enviar_mensaje_whatsapp(numero_remitente, caption_actual)
 
-            if not es_ultimo:
-                time.sleep(4.0)
-    else:
-        texto_limpio = respuesta_final.strip()
-        if texto_limpio:
-            enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
+                if not es_ultimo:
+                    time.sleep(4.0)
+        else:
+            texto_limpio = respuesta_final.strip()
+            if texto_limpio:
+                enviar_mensaje_whatsapp(numero_remitente, texto_limpio)
 
-    # Registrar respuesta de Carla en el Panel y Google Sheets
-    etapa_auto = "Link enviado" if "go.hotmart.com" in respuesta_final else None
-    registrar_interaccion(
-        telefono=numero_remitente,
-        remitente="CARLA",
-        texto=limpiar_etiquetas_para_panel(respuesta_final),
-        tipo="text",
-        forzar_etapa=etapa_auto,
-    )
+        # Registrar respuesta de Carla en el Panel (solo RAM)
+        etapa_auto = "Link enviado" if "go.hotmart.com" in respuesta_final else None
+        registrar_interaccion(
+            telefono=numero_remitente,
+            remitente="CARLA",
+            texto=limpiar_etiquetas_para_panel(respuesta_final),
+            tipo="text",
+            forzar_etapa=etapa_auto,
+        )
+    except Exception:
+        log(f"[ENVIO ERROR GENERAL] {traceback.format_exc()}")
 
 
 def despachar_buzon(numero_remitente):
@@ -484,17 +426,19 @@ def despachar_buzon(numero_remitente):
             candados_clientes[numero_remitente] = threading.Lock()
         candado_cliente = candados_clientes[numero_remitente]
 
-    with candado_cliente:
+    if not candado_cliente.acquire(timeout=45):
+        log(f"[DESPACHAR ERROR] Timeout esperando candado para {numero_remitente}")
+        return
+
+    try:
         with semaforo:
             if numero_remitente in buzon_mensajes and buzon_mensajes[numero_remitente]:
                 textos_agrupados = " ".join(buzon_mensajes[numero_remitente])
                 media_agrupada = list(buzon_media.get(numero_remitente, []))
 
                 del buzon_mensajes[numero_remitente]
-                if numero_remitente in buzon_media:
-                    del buzon_media[numero_remitente]
-                if numero_remitente in timers:
-                    del timers[numero_remitente]
+                buzon_media.pop(numero_remitente, None)
+                timers.pop(numero_remitente, None)
             else:
                 return
 
@@ -502,6 +446,10 @@ def despachar_buzon(numero_remitente):
             return
 
         procesar_mensaje_gemini(numero_remitente, textos_agrupados, media_agrupada)
+    except Exception:
+        log(f"[DESPACHAR EXCEPCION] {traceback.format_exc()}")
+    finally:
+        candado_cliente.release()
 
 
 # --- RUTAS PRINCIPALES Y WEBHOOK ---
@@ -526,7 +474,7 @@ def webhook():
 
     elif request.method == "POST":
         try:
-            body = request.get_json()
+            body = request.get_json(silent=True) or {}
 
             if body.get("object") == "whatsapp_business_account":
                 for entry in body.get("entry", []):
@@ -537,122 +485,127 @@ def webhook():
                             continue
 
                         if "messages" in value:
-                            mensaje = value["messages"][0]
-                            id_mensaje = mensaje.get("id")
-                            numero_remitente = mensaje["from"]
-                            tipo_msg = mensaje.get("type", "")
-
                             contacts = value.get("contacts", [])
-                            nombre_contacto = ""
-                            if contacts:
-                                nombre_contacto = contacts[0].get("profile", {}).get("name", "")
+                            nombres_por_id = {
+                                c.get("wa_id"): c.get("profile", {}).get("name", "")
+                                for c in contacts
+                                if isinstance(c, dict)
+                            }
+                            nombre_default = contacts[0].get("profile", {}).get("name", "") if contacts else ""
 
-                            # Deduplicación segura para todos los tipos de mensaje
-                            with semaforo:
-                                if id_mensaje:
-                                    if id_mensaje in mensajes_procesados:
-                                        continue
-                                    mensajes_procesados.add(id_mensaje)
-                                    if len(mensajes_procesados) > 1000:
-                                        mensajes_procesados.clear()
+                            for mensaje in value["messages"]:
+                                id_mensaje = mensaje.get("id")
+                                numero_remitente = mensaje["from"]
+                                tipo_msg = mensaje.get("type", "")
+                                nombre_contacto = nombres_por_id.get(numero_remitente, nombre_default)
 
-                            texto_para_bot = None
-                            texto_para_panel = ""
-                            media_info = None
-                            tipo_panel = "text"
-                            media_id = ""
+                                # Deduplicación segura para todos los tipos de mensaje
+                                with semaforo:
+                                    if id_mensaje:
+                                        if id_mensaje in mensajes_procesados:
+                                            continue
+                                        mensajes_procesados.add(id_mensaje)
+                                        if len(mensajes_procesados) > 1000:
+                                            mensajes_procesados.clear()
 
-                            if tipo_msg == "text":
-                                texto_recibido = mensaje["text"]["body"]
-                                texto_para_bot = texto_recibido
-                                texto_para_panel = texto_recibido
+                                texto_para_bot = None
+                                texto_para_panel = ""
+                                media_info = None
                                 tipo_panel = "text"
+                                media_id = ""
 
-                            elif tipo_msg == "image":
-                                img_obj = mensaje.get("image", {})
-                                media_id = img_obj.get("id", "")
-                                mime_type = img_obj.get("mime_type", "image/jpeg")
-                                caption = img_obj.get("caption", "").strip()
-                                tipo_panel = "image"
-                                texto_para_panel = caption if caption else "[Imagen enviada]"
-                                texto_para_bot = caption if caption else "[El cliente envió una imagen]"
-                                if media_id:
-                                    media_info = {
-                                        "media_id": media_id,
-                                        "media_type": "image",
-                                        "mime_type": mime_type,
-                                    }
+                                if tipo_msg == "text":
+                                    texto_recibido = mensaje["text"]["body"]
+                                    texto_para_bot = texto_recibido
+                                    texto_para_panel = texto_recibido
+                                    tipo_panel = "text"
 
-                            elif tipo_msg == "document":
-                                doc_obj = mensaje.get("document", {})
-                                media_id = doc_obj.get("id", "")
-                                mime_type = doc_obj.get("mime_type", "application/pdf")
-                                filename = doc_obj.get("filename", "documento")
-                                caption = doc_obj.get("caption", "").strip()
-                                tipo_panel = "document"
-                                texto_para_panel = caption if caption else f"[Documento: {filename}]"
-                                texto_para_bot = (
-                                    f"[El cliente envió un documento: {filename}] {caption}".strip()
-                                    if caption
-                                    else f"[El cliente envió un documento: {filename}]"
-                                )
-                                if media_id:
-                                    media_info = {
-                                        "media_id": media_id,
-                                        "media_type": "document",
-                                        "mime_type": mime_type,
-                                        "filename": filename,
-                                    }
+                                elif tipo_msg == "image":
+                                    img_obj = mensaje.get("image", {})
+                                    media_id = img_obj.get("id", "")
+                                    mime_type = img_obj.get("mime_type", "image/jpeg")
+                                    caption = img_obj.get("caption", "").strip()
+                                    tipo_panel = "image"
+                                    texto_para_panel = caption if caption else "[Imagen enviada]"
+                                    texto_para_bot = caption if caption else "[El cliente envió una imagen]"
+                                    if media_id:
+                                        media_info = {
+                                            "media_id": media_id,
+                                            "media_type": "image",
+                                            "mime_type": mime_type,
+                                        }
 
-                            elif tipo_msg in ("audio", "video", "sticker"):
-                                # Solo lo registra en el panel y Sheets para que no quedes a ciegas
+                                elif tipo_msg == "document":
+                                    doc_obj = mensaje.get("document", {})
+                                    media_id = doc_obj.get("id", "")
+                                    mime_type = doc_obj.get("mime_type", "application/pdf")
+                                    filename = doc_obj.get("filename", "documento")
+                                    caption = doc_obj.get("caption", "").strip()
+                                    tipo_panel = "document"
+                                    texto_para_panel = caption if caption else f"[Documento: {filename}]"
+                                    texto_para_bot = (
+                                        f"[El cliente envió un documento: {filename}] {caption}".strip()
+                                        if caption
+                                        else f"[El cliente envió un documento: {filename}]"
+                                    )
+                                    if media_id:
+                                        media_info = {
+                                            "media_id": media_id,
+                                            "media_type": "document",
+                                            "mime_type": mime_type,
+                                            "filename": filename,
+                                        }
+
+                                elif tipo_msg in ("audio", "video", "sticker"):
+                                    registrar_interaccion(
+                                        telefono=numero_remitente,
+                                        remitente="CLIENTE",
+                                        texto=f"[{tipo_msg.capitalize()} recibido]",
+                                        tipo=tipo_msg,
+                                        nombre=nombre_contacto,
+                                    )
+                                    continue
+                                else:
+                                    continue
+
+                                # 1. Registrar siempre en el panel (RAM)
                                 registrar_interaccion(
                                     telefono=numero_remitente,
                                     remitente="CLIENTE",
-                                    texto=f"[{tipo_msg.capitalize()} recibido]",
-                                    tipo=tipo_msg,
+                                    texto=texto_para_panel,
+                                    tipo=tipo_panel,
+                                    media_id=media_id,
                                     nombre=nombre_contacto,
                                 )
-                                continue
-                            else:
-                                continue
 
-                            # 1. Registrar siempre en el panel y Google Sheets
-                            registrar_interaccion(
-                                telefono=numero_remitente,
-                                remitente="CLIENTE",
-                                texto=texto_para_panel,
-                                tipo=tipo_panel,
-                                media_id=media_id,
-                                nombre=nombre_contacto,
-                            )
+                                # 2. Si Carla está pausada manualmente en este chat, no programa respuesta
+                                if esta_bot_pausado(numero_remitente):
+                                    continue
 
-                            # 2. Si Carla está pausada manualmente en este chat, no programa respuesta
-                            if esta_bot_pausado(numero_remitente):
-                                continue
+                                # 3. Agrupar en el buzón con tu temporizador original de 5 segundos
+                                if texto_para_bot:
+                                    with semaforo:
+                                        if numero_remitente not in buzon_mensajes:
+                                            buzon_mensajes[numero_remitente] = []
+                                        buzon_mensajes[numero_remitente].append(texto_para_bot)
 
-                            # 3. Agrupar en el buzón con tu temporizador original de 5 segundos
-                            if texto_para_bot:
-                                with semaforo:
-                                    if numero_remitente not in buzon_mensajes:
-                                        buzon_mensajes[numero_remitente] = []
-                                    buzon_mensajes[numero_remitente].append(texto_para_bot)
+                                        if media_info:
+                                            if numero_remitente not in buzon_media:
+                                                buzon_media[numero_remitente] = []
+                                            buzon_media[numero_remitente].append(media_info)
 
-                                    if media_info:
-                                        if numero_remitente not in buzon_media:
-                                            buzon_media[numero_remitente] = []
-                                        buzon_media[numero_remitente].append(media_info)
+                                        if numero_remitente in timers:
+                                            timers[numero_remitente].cancel()
 
-                                    if numero_remitente in timers:
-                                        timers[numero_remitente].cancel()
+                                        nuevo_timer = threading.Timer(
+                                            ESPERA_SEGUNDOS, despachar_buzon, args=[numero_remitente]
+                                        )
+                                        nuevo_timer.daemon = True
+                                        timers[numero_remitente] = nuevo_timer
+                                        nuevo_timer.start()
 
-                                    timers[numero_remitente] = threading.Timer(
-                                        ESPERA_SEGUNDOS, despachar_buzon, args=[numero_remitente]
-                                    )
-                                    timers[numero_remitente].start()
-
-        except Exception as e:
-            print(f"Error general en el webhook: {e}")
+        except Exception:
+            log(f"[WEBHOOK EXCEPCION] {traceback.format_exc()}")
 
         return jsonify({"status": "success"}), 200
 
@@ -757,13 +710,6 @@ def api_toggle_bot():
             buzon_mensajes.pop(telefono, None)
             buzon_media.pop(telefono, None)
 
-        payload_sheets = {
-            "accion": "actualizar_cliente",
-            "telefono": telefono,
-            "estado_bot": nuevo_estado,
-        }
-
-    enviar_a_sheets_async(payload_sheets)
     return jsonify({"ok": True, "estado_bot": nuevo_estado}), 200
 
 
@@ -781,14 +727,7 @@ def api_update_client():
             return jsonify({"ok": False, "error": "Cliente no encontrado"}), 404
         cli["etapa"] = etapa
         cli["notas"] = notas
-        payload_sheets = {
-            "accion": "actualizar_cliente",
-            "telefono": telefono,
-            "etapa": etapa,
-            "notas": notas,
-        }
 
-    enviar_a_sheets_async(payload_sheets)
     return jsonify({"ok": True}), 200
 
 
