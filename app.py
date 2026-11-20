@@ -29,6 +29,12 @@ MIME_SOPORTADOS_GEMINI = {"image/jpeg", "image/png", "image/webp", "image/gif", 
 MAX_BYTES_GEMINI = 5 * 1024 * 1024  # 5 MB máximo para proteger RAM en Render
 URL_VIDEO_GANCHO = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/video-gancho.mp4"
 
+# --- CONFIGURACIÓN DE REMARKETING INTELIGENTE (2 HORAS PAREJAS) ---
+REMARKETING_MINUTOS = float(os.environ.get("REMARKETING_MINUTOS", "120"))
+REMARKETING_HORA_INICIO = (8, 30)   # 8:30 a.m. hora Lima
+REMARKETING_HORA_FIN = (22, 0)      # 10:00 p.m. hora Lima
+VENTANA_META_SEGUNDOS = 23.5 * 3600 # Margen seguro dentro de las 24h gratis de Meta
+
 # --- MEMORIA RAM Y BUZÓN TEMPORAL (BASE ORIGINAL) ---
 historial_conversaciones = {}
 buzon_mensajes = {}
@@ -37,6 +43,10 @@ timers = {}
 candados_clientes = {}
 mensajes_procesados = set()
 ESPERA_SEGUNDOS = 5.0
+
+# --- MEMORIA DE REMARKETING (100% RAM) ---
+timers_remarketing = {}
+estado_remarketing = {}
 
 # --- MEMORIA DEL PANEL EN VIVO (100% RAM, SIN GOOGLE SHEETS) ---
 clientes_panel = {}
@@ -69,6 +79,292 @@ def esta_bot_pausado(telefono):
     with semaforo:
         cliente = clientes_panel.get(telefono)
         return bool(cliente and cliente.get("estado_bot") == "PAUSADO")
+
+
+def _cancelar_timer_remarketing_locked(telefono):
+    """Debe llamarse únicamente cuando `semaforo` ya está adquirido."""
+    t = timers_remarketing.pop(telefono, None)
+    if t:
+        t.cancel()
+
+
+def cancelar_timer_remarketing(telefono):
+    with semaforo:
+        _cancelar_timer_remarketing_locked(telefono)
+
+
+def _obtener_estado_rmk_locked(telefono):
+    """Debe llamarse únicamente cuando `semaforo` ya está adquirido."""
+    if telefono not in estado_remarketing:
+        estado_remarketing[telefono] = {
+            "precio_enviado": False,
+            "link_enviado": False,
+            "pago_confirmado": False,
+            "enviado": False,
+            "ultima_interaccion_cliente": time.time(),
+        }
+    return estado_remarketing[telefono]
+
+
+def registrar_actividad_cliente_rmk(telefono, texto_cliente=""):
+    """Cancela cualquier remarketing pendiente y registra si el cliente indica que ya pagó."""
+    texto_low = (texto_cliente or "").lower()
+    senales_pago_cliente = (
+        "ya pagu",
+        "ya hice el pago",
+        "ya cancel",
+        "ya yape",
+        "ya deposit",
+        "ya compr",
+        "ya me inscrib",
+        "ya me lleg",
+        "acceder a mi producto",
+        "mis compras",
+        "no me llega el correo",
+    )
+    with semaforo:
+        _cancelar_timer_remarketing_locked(telefono)
+        est = _obtener_estado_rmk_locked(telefono)
+        est["ultima_interaccion_cliente"] = time.time()
+        if any(s in texto_low for s in senales_pago_cliente):
+            est["pago_confirmado"] = True
+
+
+def actualizar_y_programar_remarketing(telefono, respuesta_carla):
+    """Actualiza la etapa comercial según la respuesta de Carla y programa el toque único de 2 horas."""
+    resp_low = (respuesta_carla or "").lower()
+
+    senales_precio = ("s/ 110", "110.00", "bonos.pdf", "go.hotmart.com")
+    senales_link = ("go.hotmart.com",)
+    senales_post_pago = (
+        "activados automáticamente",
+        "activan automáticamente",
+        "quedan activados",
+        "quedaron activados",
+        "ya tienes separado tu cupo",
+        "acceder a mi producto",
+        "bonus - comunidad de apoyo",
+        "grupos de apoyo",
+        "cambio del correo electrónico",
+        "qué alegría que ya estés adentro",
+        "celebremos",
+    )
+
+    segundos_espera = None
+
+    with semaforo:
+        est = _obtener_estado_rmk_locked(telefono)
+
+        if any(s in resp_low for s in senales_precio):
+            est["precio_enviado"] = True
+        if any(s in resp_low for s in senales_link):
+            est["link_enviado"] = True
+        if any(s in resp_low for s in senales_post_pago):
+            est["pago_confirmado"] = True
+
+        cli = clientes_panel.get(telefono)
+        pausado = bool(cli and cli.get("estado_bot") == "PAUSADO")
+
+        # Si ya pagó, ya se envió remarketing antes, está pausado o aún no vio el precio -> no programar
+        if pausado or est["pago_confirmado"] or est["enviado"] or not (est["precio_enviado"] or est["link_enviado"]):
+            _cancelar_timer_remarketing_locked(telefono)
+            return
+
+        # Calcular hora exacta respetando horario humano de Lima (8:30 a.m. a 10:00 p.m.)
+        ahora = datetime.now(TZ_PERU)
+        objetivo = ahora + timedelta(minutes=REMARKETING_MINUTOS)
+
+        inicio_hoy = objetivo.replace(
+            hour=REMARKETING_HORA_INICIO[0],
+            minute=REMARKETING_HORA_INICIO[1],
+            second=0,
+            microsecond=0,
+        )
+        fin_hoy = objetivo.replace(
+            hour=REMARKETING_HORA_FIN[0],
+            minute=REMARKETING_HORA_FIN[1],
+            second=0,
+            microsecond=0,
+        )
+
+        if objetivo < inicio_hoy:
+            objetivo = inicio_hoy
+        elif objetivo >= fin_hoy:
+            objetivo = (objetivo + timedelta(days=1)).replace(
+                hour=REMARKETING_HORA_INICIO[0],
+                minute=REMARKETING_HORA_INICIO[1],
+                second=0,
+                microsecond=0,
+            )
+
+        # Verificar que el envío programado siga dentro de la ventana gratis de 24h de Meta
+        ultimo_ts = est.get("ultima_interaccion_cliente", time.time())
+        if (objetivo.timestamp() - ultimo_ts) > VENTANA_META_SEGUNDOS:
+            _cancelar_timer_remarketing_locked(telefono)
+            log(f"[REMARKETING OMITIDO] Caería fuera de la ventana de 24h de Meta para {telefono}")
+            return
+
+        segundos_espera = max(1.0, (objetivo - ahora).total_seconds())
+        _cancelar_timer_remarketing_locked(telefono)
+
+        nuevo_timer = threading.Timer(segundos_espera, ejecutar_remarketing, args=[telefono])
+        nuevo_timer.daemon = True
+        timers_remarketing[telefono] = nuevo_timer
+        nuevo_timer.start()
+
+        modo = "POST_LINK" if est["link_enviado"] else "POST_PRECIO"
+        log(f"[REMARKETING PROGRAMADO] {telefono} ({modo}) para {objetivo.strftime('%d/%m %H:%M')} ({int(segundos_espera)}s)")
+
+
+def ejecutar_remarketing(numero_remitente):
+    """Genera con Gemini un seguimiento humano contextual y lo guarda en el historial para continuar el flujo."""
+    global historial_conversaciones
+
+    with semaforo:
+        timers_remarketing.pop(numero_remitente, None)
+        if numero_remitente not in candados_clientes:
+            candados_clientes[numero_remitente] = threading.Lock()
+        candado_cliente = candados_clientes[numero_remitente]
+
+    if not candado_cliente.acquire(timeout=45):
+        log(f"[REMARKETING ERROR] Timeout esperando candado para {numero_remitente}")
+        return
+
+    try:
+        with semaforo:
+            cli = clientes_panel.get(numero_remitente)
+            if cli and cli.get("estado_bot") == "PAUSADO":
+                return
+            if numero_remitente in buzon_mensajes and buzon_mensajes[numero_remitente]:
+                return
+
+            est = estado_remarketing.get(numero_remitente)
+            if not est or est.get("pago_confirmado") or est.get("enviado"):
+                return
+            if not (est.get("precio_enviado") or est.get("link_enviado")):
+                return
+
+            ultimo_ts_al_iniciar = est.get("ultima_interaccion_cliente", 0)
+            if (time.time() - ultimo_ts_al_iniciar) > VENTANA_META_SEGUNDOS:
+                log(f"[REMARKETING CANCELADO] Ventana 24h vencida para {numero_remitente}")
+                return
+
+            modo = "POST_LINK" if est.get("link_enviado") else "POST_PRECIO"
+            memoria = list(historial_conversaciones.get(numero_remitente, []))
+
+        if not GEMINI_API_KEY:
+            log("[REMARKETING ERROR] GEMINI_API_KEY no configurada.")
+            return
+
+        try:
+            with open("prompt_ventas.txt", "r", encoding="utf-8") as archivo:
+                instruccion_base = archivo.read().strip()
+        except Exception as e:
+            log(f"[REMARKETING PROMPT ERROR] {e}")
+            instruccion_base = "Eres Carla, asesora de ventas de Creas y Aprendes."
+
+        texto_historial = "\n\nÚltimos mensajes de contexto:\n" + "\n".join(memoria) if memoria else ""
+
+        if modo == "POST_PRECIO":
+            orden_interna = (
+                "\n\n[ORDEN INTERNA DE SEGUIMIENTO — NO LA MENCIONES AL CLIENTE: "
+                "Han pasado 2 horas desde tu último mensaje y el prospecto no ha respondido. "
+                "Ya vio el precio promocional de S/ 110.00, pero todavía no pidió el enlace oficial. "
+                "Redacta UN solo mensaje de seguimiento por WhatsApp (SOLO TEXTO, sin etiquetas [VIDEO]/[DOCUMENT]/[IMAGE] y SIN pegar el enlace todavía) "
+                "sonando 100% humana, cercana, natural y breve (máximo 3 párrafos cortos). "
+                "Ten en cuenta lo último que conversaron para no repetir frases mecánicas, y apóyate con naturalidad en estos dos alivios reales: "
+                "1) Que no necesita comprar máquinas caras porque empieza con utensilios que ya tiene en casa, y vendiendo sus primeros *4 sets* ya podría recuperar los *S/ 110* que invirtió en el curso. "
+                "2) Que no compra a ciegas: *Hotmart* la respalda con *7 días de garantía* para entrar, revisar las clases por dentro y si ve que no es para ella, le devuelven el *100% de su dinero*. "
+                "Deja el último párrafo SOLO para una pregunta breve y empática invitándola a contarte con confianza si hay alguna duda puntual que todavía la frena.]"
+            )
+        else:
+            orden_interna = (
+                "\n\n[ORDEN INTERNA DE SEGUIMIENTO — NO LA MENCIONES AL CLIENTE: "
+                "Han pasado 2 horas desde tu último mensaje y el prospecto no ha respondido. "
+                "Ya recibió el enlace oficial de Hotmart, pero todavía no ha confirmado su pago. "
+                "Redacta UN solo mensaje de seguimiento por WhatsApp (SOLO TEXTO, sin etiquetas [VIDEO]/[DOCUMENT]/[IMAGE] y SIN volver a pegar la URL del enlace) "
+                "sonando 100% humana, cercana y breve (máximo 3 párrafos cortos). "
+                "Retoma el hilo natural según lo último que hablaron (por ejemplo el método de pago que mencionó): "
+                "pregúntale con naturalidad si pudo abrir el enlace o si le apareció algún detalle en pantalla, "
+                "recuérdale brevemente que su pago entra directo por *Hotmart* con total seguridad y cuenta con *7 días de garantía* para revisar el programa por dentro con tranquilidad, "
+                "y cierra en el último párrafo SOLO ofreciéndole ayuda inmediata si se trabó en algún paso (como con *Yape* o el método que eligió).]"
+            )
+
+        prompt_rmk = f"{instruccion_base}{texto_historial}{orden_interna}"
+        url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
+        payload_gemini = {
+            "contents": [{"parts": [{"text": prompt_rmk}]}],
+            "generationConfig": {"temperature": 0.25},
+        }
+
+        res = None
+        for intento in range(2):
+            try:
+                res = requests.post(
+                    url_gemini,
+                    headers={"Content-Type": "application/json"},
+                    json=payload_gemini,
+                    timeout=(10, 30),
+                )
+                if res.status_code == 200:
+                    break
+                log(f"[REMARKETING GEMINI ERROR] Intento {intento + 1} HTTP {res.status_code}: {res.text[:200]}")
+                if res.status_code in (429, 500, 502, 503, 504) and intento == 0:
+                    time.sleep(2.0)
+                    continue
+                break
+            except requests.exceptions.RequestException as e:
+                log(f"[REMARKETING GEMINI EXCEPCION] Intento {intento + 1}: {e}")
+                if intento == 0:
+                    time.sleep(2.0)
+                    continue
+
+        if res is None or res.status_code != 200:
+            return
+
+        data = res.json()
+        candidates = data.get("candidates") or []
+        parts = (candidates[0].get("content", {}).get("parts") or []) if candidates else []
+        texto_rmk = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+
+        # Limpieza defensiva: el remarketing de 2 horas es siempre solo texto
+        texto_rmk = re.sub(r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):[^\]]+\]', '', texto_rmk, flags=re.IGNORECASE).strip()
+        if not texto_rmk:
+            return
+
+        # Revalidación final antes de enviar (por si el cliente escribió o pausaste mientras Gemini pensaba)
+        with semaforo:
+            cli = clientes_panel.get(numero_remitente)
+            if cli and cli.get("estado_bot") == "PAUSADO":
+                return
+            if numero_remitente in buzon_mensajes and buzon_mensajes[numero_remitente]:
+                return
+            est = estado_remarketing.get(numero_remitente)
+            if not est or est.get("pago_confirmado") or est.get("enviado"):
+                return
+            if est.get("ultima_interaccion_cliente", 0) != ultimo_ts_al_iniciar:
+                return
+
+        exito = enviar_mensaje_whatsapp(numero_remitente, texto_rmk)
+        if exito:
+            with semaforo:
+                est = _obtener_estado_rmk_locked(numero_remitente)
+                est["enviado"] = True
+                memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
+                memoria_actual.append(f"Tú: {texto_rmk}")
+                historial_conversaciones[numero_remitente] = memoria_actual[-12:]
+
+            registrar_interaccion(
+                telefono=numero_remitente,
+                remitente="CARLA",
+                texto=texto_rmk,
+                tipo="text",
+            )
+            log(f"[REMARKETING ENVIADO] {numero_remitente} ({modo})")
+    except Exception:
+        log(f"[REMARKETING EXCEPCION] {traceback.format_exc()}")
+    finally:
+        candado_cliente.release()
 
 
 def registrar_interaccion(telefono, remitente, texto, tipo="text", media_id="", nombre="", forzar_etapa=None):
@@ -225,6 +521,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
         return
 
     respuesta_final = "Lo siento, tengo un problema técnico temporal."
+    gemini_ok = False
 
     if GEMINI_API_KEY:
         try:
@@ -310,6 +607,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
 
                 if texto_generado:
                     respuesta_final = texto_generado
+                    gemini_ok = True
                     # Salvavidas de video de bienvenida: si Gemini olvidó la etiqueta [VIDEO:...], la inyecta
                     if "video de arriba" in respuesta_final.lower() and "[VIDEO:" not in respuesta_final.upper():
                         respuesta_final = f"[VIDEO:{URL_VIDEO_GANCHO}]\n{respuesta_final}"
@@ -414,6 +712,10 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
             tipo="text",
             forzar_etapa=etapa_auto,
         )
+
+        # Programar o actualizar reloj de remarketing de 2 horas (solo tras precio o link)
+        if gemini_ok:
+            actualizar_y_programar_remarketing(numero_remitente, respuesta_final)
     except Exception:
         log(f"[ENVIO ERROR GENERAL] {traceback.format_exc()}")
 
@@ -557,6 +859,7 @@ def webhook():
                                         }
 
                                 elif tipo_msg in ("audio", "video", "sticker"):
+                                    registrar_actividad_cliente_rmk(numero_remitente, "")
                                     registrar_interaccion(
                                         telefono=numero_remitente,
                                         remitente="CLIENTE",
@@ -567,6 +870,9 @@ def webhook():
                                     continue
                                 else:
                                     continue
+
+                                # 0. Cancelar al instante cualquier reloj de remarketing pendiente
+                                registrar_actividad_cliente_rmk(numero_remitente, texto_para_bot or "")
 
                                 # 1. Registrar siempre en el panel (RAM)
                                 registrar_interaccion(
@@ -707,6 +1013,7 @@ def api_toggle_bot():
             if telefono in timers:
                 timers[telefono].cancel()
                 del timers[telefono]
+            _cancelar_timer_remarketing_locked(telefono)
             buzon_mensajes.pop(telefono, None)
             buzon_media.pop(telefono, None)
 
@@ -728,6 +1035,12 @@ def api_update_client():
         cli["etapa"] = etapa
         cli["notas"] = notas
 
+        etapa_low = etapa.lower()
+        if any(k in etapa_low for k in ("pagado", "venta", "compr", "cerrado", "alumn")):
+            _cancelar_timer_remarketing_locked(telefono)
+            est = _obtener_estado_rmk_locked(telefono)
+            est["pago_confirmado"] = True
+
     return jsonify({"ok": True}), 200
 
 
@@ -747,7 +1060,7 @@ def api_send_manual():
             "error": "Meta no permitió el envío (verifica si pasaron más de 24h desde el último mensaje del cliente).",
         }), 400
 
-    # Al intervenir tú manualmente, Carla se pausa en este chat y guarda tu mensaje en su memoria
+    # Al intervenir tú manualmente, Carla se pausa en este chat, cancela remarketing y guarda tu mensaje en memoria
     with semaforo:
         cli = clientes_panel.get(telefono)
         if cli:
@@ -755,6 +1068,7 @@ def api_send_manual():
         if telefono in timers:
             timers[telefono].cancel()
             del timers[telefono]
+        _cancelar_timer_remarketing_locked(telefono)
         buzon_mensajes.pop(telefono, None)
         buzon_media.pop(telefono, None)
 
