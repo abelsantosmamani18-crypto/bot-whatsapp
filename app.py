@@ -76,15 +76,17 @@ TEXTO_PASO_4 = (
 )
 
 # --- REGLAS DE FILTRO CONSERVADOR (PASOS GRATIS) Y DISPARADORES DE ANEXOS ---
-BLOQUEO_PASO_1 = (
-    "precio", "cuanto", "cuesta", "costo", "valor", "vale", "presencial", "donde",
-    "ubicacion", "direccion", "horario", "hora", "yape", "plin", "pago", "pagar",
+BLOQUEO_PASO_1_FRASES = (
+    "precio", "cuanto", "cuesta", "costo", "valor", "presencial", "donde",
+    "ubicacion", "direccion", "horario", "yape", "plin", "pago", "pagar",
     "tarjeta", "efectivo", "paypal", "cuota", "material", "insumo", "certificado",
-    "diploma", "link", "enlace", "garantia", "tiempo", "dura", "duracion", "gratis",
+    "diploma", "link", "enlace", "garantia", "tiempo", "duracion", "gratis",
     "bono", "temario", "modulo", "hotmart", "pague", "compre", "estafa", "confiable",
     "seguro", "como funciona", "como es", "como llega", "que incluye", "incluye",
     "de que trata", "que es", "voucher", "comprobante", "correo", "error", "ayuda",
 )
+
+BLOQUEO_PASO_1_PALABRAS = {"vale", "hora", "horas", "dura", "duran"}
 
 SALUDOS_PASO_1 = (
     "hola", "buenas", "buen dia", "buenos dias", "info", "informacion", "interesa",
@@ -124,24 +126,28 @@ DISPARADORES_TEMARIO = (
 
 DISPARADORES_PAGOS = (
     "yap", "plin", "tarjet", "debit", "credit", "cuota", "pagoefectivo", "pago efectivo",
-    "efectivo", "cip", "banco", "interbank", "bbva", "bcp", "scotiabank", "banbif",
+    "efectivo", "banco", "interbank", "bbva", "bcp", "scotiabank", "banbif",
     "caja", "tambo", "kasnet", "agente", "paypal", "pagar", "pago", "pagos", "medio",
     "metodo", "cupon", "109", "189", "aromaterapia", "aprob", "codigo", "confirmar",
     "solicitar", "boton", "error", "rechaz", "fallo", "falla", "no puedo", "no me deja",
-    "trabo", "trabado", "limite", "saldo", "checkout", "formulario", "dni", "celular",
+    "trabo", "trabado", "limite", "saldo", "checkout", "formulario", "celular",
     "matricul", "inscrib", "link", "enlace", "comprar", "deposito", "transfer",
 )
+
+DISPARADORES_PAGOS_PALABRAS = {"cip", "dni"}
 
 DISPARADORES_POSTPAGO = (
     "pague", "pagado", "ya hice", "ya cancel", "ya yape", "ya deposit", "ya transfer",
     "ya compr", "ya me inscrib", "voucher", "baucher", "comprobante", "recibo",
-    "constancia", "pedido recibido", "cip", "correo", "email", "mail", "gmail",
-    "spam", "bandeja", "no me llega", "no llega", "hotmart", "app", "aplicacion",
+    "constancia", "pedido recibido", "correo", "email", "mail", "gmail",
+    "spam", "bandeja", "no me llega", "no llega", "hotmart", "aplicacion",
     "play store", "app store", "acceder", "acceso", "entrar", "ingresar", "ingreso",
     "mis compras", "contrasena", "clave", "6 digitos", "digitos", "codigo", "verificar",
-    "verificacion", "grupo", "vip", "comunidad", "whatsapp", "soporte", "descripcion",
-    "equivoque", "mal escrito", "cambiar correo", "cambio de correo", "hp",
+    "verificacion", "grupo", "vip", "comunidad", "descripcion",
+    "equivoque", "mal escrito", "cambiar correo", "cambio de correo",
 )
+
+DISPARADORES_POSTPAGO_PALABRAS = {"cip", "app", "hp"}
 
 # --- CONFIGURACIÓN DE REMARKETING INTELIGENTE (2 HORAS PAREJAS) ---
 REMARKETING_MINUTOS = float(os.environ.get("REMARKETING_MINUTOS", "120"))
@@ -166,8 +172,8 @@ estado_remarketing = {}
 clientes_panel = {}
 mensajes_panel = {}
 
-# --- EL CANDADO DE SEGURIDAD ---
-semaforo = threading.Lock()
+# --- EL CANDADO DE SEGURIDAD (RLock reentrante para evitar bloqueos) ---
+semaforo = threading.RLock()
 
 
 def ahora_peru():
@@ -240,11 +246,13 @@ def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
     if not palabras:
         return None, None
 
+    set_palabras = set(palabras)
+
     # --- PASO 1 GRATIS: Cliente 100% nuevo con mensaje del anuncio o saludo genérico ---
     if not memoria:
         if len(palabras) > 28 or len(texto_norm) > 220:
             return None, None
-        if any(b in texto_norm for b in BLOQUEO_PASO_1):
+        if (set_palabras & BLOQUEO_PASO_1_PALABRAS) or any(b in texto_norm for b in BLOQUEO_PASO_1_FRASES):
             return None, None
         if len(palabras) <= 3 or any(s in texto_norm for s in SALUDOS_PASO_1):
             return 1, TEXTO_PASO_1
@@ -254,7 +262,6 @@ def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
     if len(palabras) > 7:
         return None, None
 
-    set_palabras = set(palabras)
     if set_palabras & PALABRAS_BLOQUEO_CONFIRMACION:
         return None, None
 
@@ -298,6 +305,7 @@ def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
 def seleccionar_anexos(numero_remitente, texto_recibido, media_recibida):
     """Inyecta dinámicamente solo los anexos relevantes para este turno (pueden combinarse varios)."""
     texto_norm = normalizar_texto(texto_recibido)
+    set_palabras = set(re.findall(r"[a-z0-9]+", texto_norm))
 
     with semaforo:
         est = estado_remarketing.get(numero_remitente, {})
@@ -305,8 +313,19 @@ def seleccionar_anexos(numero_remitente, texto_recibido, media_recibida):
         pago_confirmado = bool(est.get("pago_confirmado"))
 
     usar_temario = any(k in texto_norm for k in DISPARADORES_TEMARIO)
-    usar_pagos = bool(media_recibida) or (link_enviado and not pago_confirmado) or any(k in texto_norm for k in DISPARADORES_PAGOS)
-    usar_postpago = bool(media_recibida) or pago_confirmado or any(k in texto_norm for k in DISPARADORES_POSTPAGO)
+    usar_pagos = (
+        bool(media_recibida)
+        or (link_enviado and not pago_confirmado)
+        or bool(set_palabras & DISPARADORES_PAGOS_PALABRAS)
+        or any(k in texto_norm for k in DISPARADORES_PAGOS)
+    )
+    usar_postpago = (
+        bool(media_recibida)
+        or pago_confirmado
+        or bool(set_palabras & DISPARADORES_POSTPAGO_PALABRAS)
+        or bool(re.search(r"\bhp\d+", texto_norm))
+        or any(k in texto_norm for k in DISPARADORES_POSTPAGO)
+    )
 
     bloques = []
     nombres = []
@@ -894,7 +913,8 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
     paso_gratis, respuesta_gratis = detectar_paso_gratis(texto_recibido, media_recibida, memoria)
     if paso_gratis and respuesta_gratis:
         with semaforo:
-            if esta_bot_pausado(numero_remitente):
+            cli = clientes_panel.get(numero_remitente)
+            if cli and cli.get("estado_bot") == "PAUSADO":
                 return
             memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
             memoria_actual.append(f"Cliente: {texto_recibido}")
