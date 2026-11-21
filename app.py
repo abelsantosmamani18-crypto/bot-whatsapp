@@ -111,10 +111,14 @@ def registrar_actividad_cliente_rmk(telefono, texto_cliente=""):
     texto_low = (texto_cliente or "").lower()
     senales_pago_cliente = (
         "ya pagu",
+        "ya lo pagu",
         "ya hice el pago",
         "ya cancel",
+        "ya lo cancel",
         "ya yape",
+        "ya lo yape",
         "ya deposit",
+        "ya transfer",
         "ya compr",
         "ya me inscrib",
         "ya me lleg",
@@ -570,7 +574,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
             parts_payload = [{"text": prompt}] + partes_adjuntas
             payload_gemini = {
                 "contents": [{"parts": parts_payload}],
-                "generationConfig": {"temperature": 0.2},
+                "generationConfig": {"temperature": 0.4},
             }
 
             res = None
@@ -595,7 +599,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
                 log("[GEMINI] Reintentando solo con texto tras fallo con adjunto.")
                 payload_fallback = {
                     "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": 0.2},
+                    "generationConfig": {"temperature": 0.4},
                 }
                 res = requests.post(url_gemini, headers=headers_gemini, json=payload_fallback, timeout=(10, 25))
 
