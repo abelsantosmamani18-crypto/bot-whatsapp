@@ -6,6 +6,7 @@ import base64
 import secrets
 import threading
 import traceback
+import unicodedata
 import requests
 from datetime import datetime, timedelta, timezone
 from functools import wraps
@@ -27,7 +28,120 @@ app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 TZ_PERU = timezone(timedelta(hours=-5))
 MIME_SOPORTADOS_GEMINI = {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
 MAX_BYTES_GEMINI = 5 * 1024 * 1024  # 5 MB máximo para proteger RAM en Render
+
+# --- ARCHIVOS DE PROMPT MODULAR (NÚCLEO + 3 ANEXOS + RESPALDO) ---
+ARCHIVO_NUCLEO = "prompt_nucleo.txt"
+ARCHIVO_FALLBACK = "prompt_ventas.txt"
+ARCHIVO_ANEXO_TEMARIO = "anexo_temario.txt"
+ARCHIVO_ANEXO_PAGOS = "anexo_pagos.txt"
+ARCHIVO_ANEXO_POSTPAGO = "anexo_postpago.txt"
+
+# --- URLs MULTIMEDIA Y TEXTOS FIJOS DEL EMBUDO (PASOS 1 AL 4 GRATIS) ---
 URL_VIDEO_GANCHO = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/video-gancho.mp4"
+URL_TEMARIO = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/temario.pdf"
+URL_CERTIFICADO = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/certificado.png"
+URL_PLATAFORMA = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/video-plataforma.mp4"
+URL_BONOS = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/bonos.pdf"
+
+TEXTO_PASO_1 = (
+    f"[VIDEO:{URL_VIDEO_GANCHO}]\n"
+    "¡Hola! Soy *Carla*, te doy la súper bienvenida a *Creas y Aprendes* 👋. "
+    "En el video de arriba, nuestra *instructora Laura* te da una presentación de todo lo que lograrás crear ✨.\n\n"
+    "Cuéntame, ¿te gustaría *crear tu propia marca* de velas y jabones y poder tener un *negocio rentable*? 😊"
+)
+
+TEXTO_PASO_2 = (
+    "¡Me alegra muchísimo! Aquí aprenderás *paso a paso desde cero*, con las medidas y temperaturas exactas "
+    "para no desperdiciar materiales, hasta crear diseños profesionales y venderlos bajo tu propia marca ✨.\n\n"
+    "¿Te envío el *temario oficial* para que revises todos los módulos al detalle? 📋"
+)
+
+TEXTO_PASO_3 = (
+    f"[DOCUMENT:{URL_TEMARIO}]\n"
+    "👆📄 Arriba tienes el *temario oficial en PDF* con todos los módulos de los 3 programas (*Velas, Jabones y creación de tu Marca*) 📋.\n\n"
+    f"[IMAGE:{URL_CERTIFICADO}]\n"
+    "🎓 Y aquí ves el *Certificado Internacional* que recibirás con tu nombre al finalizar para respaldar tu negocio ✨.\n\n"
+    "¿Tienes alguna consulta sobre los módulos o te paso el *precio promocional* junto con los *18 bonos* y la plataforma por dentro? 🎁"
+)
+
+TEXTO_PASO_4 = (
+    "El valor normal de los *3 programas completos* (*Velas, Jabones y creación de tu Marca*) es de ~S/ 220.00~, "
+    "pero hoy con el *50% de descuento* te llevas la *promoción 3x1* con acceso de por vida por un *único pago de S/ 110.00* 🔥.\n\n"
+    f"[DOCUMENT:{URL_BONOS}]\n"
+    "👆📄 Además, hoy desbloqueas gratis en tu plataforma *18 bonos exclusivos* (cursos extra en video HD, recetarios, proveedores y plantillas en Excel). "
+    "Arriba tienes el catálogo completo 🎁.\n\n"
+    f"[VIDEO:{URL_PLATAFORMA}]\n"
+    "🎥 Aquí arriba ves nuestra *plataforma por dentro* para aprender desde cero en *video HD* a tu ritmo, sin desperdiciar materiales ✨.\n\n"
+    "Hoy solo me quedan *3 cupos* con el *50% de descuento* del *3x1*, ¿tienes alguna consulta o te envío el *enlace oficial* para asegurar el tuyo? 🔥"
+)
+
+# --- REGLAS DE FILTRO CONSERVADOR (PASOS GRATIS) Y DISPARADORES DE ANEXOS ---
+BLOQUEO_PASO_1 = (
+    "precio", "cuanto", "cuesta", "costo", "valor", "vale", "presencial", "donde",
+    "ubicacion", "direccion", "horario", "hora", "yape", "plin", "pago", "pagar",
+    "tarjeta", "efectivo", "paypal", "cuota", "material", "insumo", "certificado",
+    "diploma", "link", "enlace", "garantia", "tiempo", "dura", "duracion", "gratis",
+    "bono", "temario", "modulo", "hotmart", "pague", "compre", "estafa", "confiable",
+    "seguro", "como funciona", "como es", "como llega", "que incluye", "incluye",
+    "de que trata", "que es", "voucher", "comprobante", "correo", "error", "ayuda",
+)
+
+SALUDOS_PASO_1 = (
+    "hola", "buenas", "buen dia", "buenos dias", "info", "informacion", "interesa",
+    "quisiera", "quiero", "curso", "taller", "programa", "detalles", "saludos",
+    "hey", "hi", "velas", "jabones", "3x1",
+)
+
+PALABRAS_AFIRMATIVAS = {
+    "si", "sii", "siii", "siiii", "claro", "dale", "ok", "okay", "vale", "bueno",
+    "genial", "perfecto", "encantaria", "gustaria", "quisiera", "quiero", "enviame",
+    "enviamelo", "pasame", "pasamelo", "mandame", "mandamelo", "muestrame", "porfa",
+    "favor", "obvio", "seguro", "listo", "va", "sip", "excelente", "super", "envialo",
+    "pasalo", "mandalo",
+}
+
+PALABRAS_BLOQUEO_CONFIRMACION = {
+    "no", "pero", "aunque", "cuanto", "cuesta", "vale", "presencial", "donde",
+    "como", "cuando", "quien", "porque", "duda", "dudas", "consulta", "consultas",
+    "pregunta", "preguntas", "yape", "plin", "tarjeta", "pago", "pagar", "caro",
+    "dinero", "plata", "pensar", "luego", "despues", "material", "materiales",
+    "horario", "horarios", "tiempo", "garantia", "link", "enlace", "gratis", "ya",
+    "pague", "compre", "correo", "hotmart", "solo", "error", "ayuda", "voucher",
+}
+
+DISPARADORES_TEMARIO = (
+    "temario", "modulo", "bono", "receta", "vela", "jabon", "cera", "glicerina",
+    "molde", "yeso", "alabastro", "sosa", "saponif", "shampoo", "champu", "bomba",
+    "balsamo", "difusor", "desmaquill", "navid", "grinch", "adviento", "halloween",
+    "carbon", "avena", "cafe", "lufa", "arroz", "chocolate", "manzanilla", "curcuma",
+    "lavanda", "romero", "calendula", "aloe", "jelly", "afrodis", "mascota", "bebe",
+    "infantil", "canva", "capcut", "excel", "finanza", "negocio", "marca", "redes",
+    "reel", "google maps", "material", "insumo", "provee", "capital", "inversion",
+    "recuper", "ganan", "rentab", "maquina", "microonda", "gramera", "alcohol",
+    "fragancia", "aroma", "pabilo", "colorante", "contenido", "aprender", "incluye",
+    "ensen", "clase", "leccion", "laura", "andres", "instructor", "profesor", "manitas",
+)
+
+DISPARADORES_PAGOS = (
+    "yap", "plin", "tarjet", "debit", "credit", "cuota", "pagoefectivo", "pago efectivo",
+    "efectivo", "cip", "banco", "interbank", "bbva", "bcp", "scotiabank", "banbif",
+    "caja", "tambo", "kasnet", "agente", "paypal", "pagar", "pago", "pagos", "medio",
+    "metodo", "cupon", "109", "189", "aromaterapia", "aprob", "codigo", "confirmar",
+    "solicitar", "boton", "error", "rechaz", "fallo", "falla", "no puedo", "no me deja",
+    "trabo", "trabado", "limite", "saldo", "checkout", "formulario", "dni", "celular",
+    "matricul", "inscrib", "link", "enlace", "comprar", "deposito", "transfer",
+)
+
+DISPARADORES_POSTPAGO = (
+    "pague", "pagado", "ya hice", "ya cancel", "ya yape", "ya deposit", "ya transfer",
+    "ya compr", "ya me inscrib", "voucher", "baucher", "comprobante", "recibo",
+    "constancia", "pedido recibido", "cip", "correo", "email", "mail", "gmail",
+    "spam", "bandeja", "no me llega", "no llega", "hotmart", "app", "aplicacion",
+    "play store", "app store", "acceder", "acceso", "entrar", "ingresar", "ingreso",
+    "mis compras", "contrasena", "clave", "6 digitos", "digitos", "codigo", "verificar",
+    "verificacion", "grupo", "vip", "comunidad", "whatsapp", "soporte", "descripcion",
+    "equivoque", "mal escrito", "cambiar correo", "cambio de correo", "hp",
+)
 
 # --- CONFIGURACIÓN DE REMARKETING INTELIGENTE (2 HORAS PAREJAS) ---
 REMARKETING_MINUTOS = float(os.environ.get("REMARKETING_MINUTOS", "120"))
@@ -65,6 +179,30 @@ def log(mensaje):
     print(f"[{datetime.now(TZ_PERU).strftime('%H:%M:%S')}] {mensaje}", file=sys.stderr, flush=True)
 
 
+def normalizar_texto(texto):
+    """Convierte a minúsculas y quita tildes para comparaciones tolerantes a errores."""
+    if not texto:
+        return ""
+    nfkd = unicodedata.normalize("NFKD", texto.lower())
+    return "".join(c for c in nfkd if not unicodedata.combining(c)).strip()
+
+
+def leer_archivo_texto(ruta, fallback=""):
+    try:
+        with open(ruta, "r", encoding="utf-8") as archivo:
+            return archivo.read().strip()
+    except Exception:
+        return fallback
+
+
+def cargar_prompt_nucleo():
+    nucleo = leer_archivo_texto(ARCHIVO_NUCLEO)
+    if nucleo:
+        return nucleo
+    log(f"[PROMPT AVISO] {ARCHIVO_NUCLEO} no encontrado; usando respaldo {ARCHIVO_FALLBACK}.")
+    return leer_archivo_texto(ARCHIVO_FALLBACK, "Eres Carla, asesora de ventas de Creas y Aprendes.")
+
+
 def limpiar_etiquetas_para_panel(texto):
     if not texto:
         return ""
@@ -73,6 +211,125 @@ def limpiar_etiquetas_para_panel(texto):
         archivo = match.group(2).strip().split("/")[-1]
         return f"[{tipo}: {archivo}]"
     return re.sub(r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]', _reemplazar, texto, flags=re.IGNORECASE).strip()
+
+
+def compactar_para_historial(texto):
+    """Reemplaza URLs largas de multimedia por marcas cortas para ahorrar tokens sin perder memoria."""
+    if not texto:
+        return ""
+    def _reemplazar(match):
+        archivo = match.group(2).strip().split("/")[-1]
+        return f"[ARCHIVO ENVIADO: {archivo}]"
+    return re.sub(r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]', _reemplazar, texto, flags=re.IGNORECASE).strip()
+
+
+def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
+    """
+    Devuelve (numero_paso, respuesta_fija) SOLO cuando es 100% seguro responder sin IA.
+    Ante cualquier pregunta, duda, objeción o adjunto devuelve (None, None) para pasar a Gemini.
+    """
+    if media_recibida:
+        return None, None
+
+    texto_raw = (texto_recibido or "").strip()
+    if not texto_raw or "?" in texto_raw or "¿" in texto_raw:
+        return None, None
+
+    texto_norm = normalizar_texto(texto_raw)
+    palabras = re.findall(r"[a-z0-9]+", texto_norm)
+    if not palabras:
+        return None, None
+
+    # --- PASO 1 GRATIS: Cliente 100% nuevo con mensaje del anuncio o saludo genérico ---
+    if not memoria:
+        if len(palabras) > 28 or len(texto_norm) > 220:
+            return None, None
+        if any(b in texto_norm for b in BLOQUEO_PASO_1):
+            return None, None
+        if len(palabras) <= 3 or any(s in texto_norm for s in SALUDOS_PASO_1):
+            return 1, TEXTO_PASO_1
+        return None, None
+
+    # --- PASOS 2, 3 Y 4 GRATIS: Solo confirmaciones cortas y limpias al paso inmediato anterior ---
+    if len(palabras) > 7:
+        return None, None
+
+    set_palabras = set(palabras)
+    if set_palabras & PALABRAS_BLOQUEO_CONFIRMACION:
+        return None, None
+
+    ultima_carla = ""
+    for item in reversed(memoria):
+        if item.startswith("Tú:"):
+            ultima_carla = normalizar_texto(item)
+            break
+
+    if not ultima_carla:
+        return None, None
+
+    historial_unido = normalizar_texto("\n".join(memoria))
+    es_afirmativa = bool(set_palabras & PALABRAS_AFIRMATIVAS)
+
+    # Paso 1 -> Paso 2
+    if "crear tu propia marca" in ultima_carla and "negocio rentable" in ultima_carla:
+        if es_afirmativa and not (set_palabras & {"precio", "costo", "valor", "bonos", "bono", "plataforma", "certificado", "diploma", "temario"}):
+            return 2, TEXTO_PASO_2
+        return None, None
+
+    # Paso 2 -> Paso 3
+    if "temario oficial" in ultima_carla and "modulos al detalle" in ultima_carla:
+        if "temario.pdf" in historial_unido or "certificado.png" in historial_unido:
+            return None, None
+        if (es_afirmativa or "temario" in set_palabras) and not (set_palabras & {"precio", "costo", "valor", "bonos", "bono", "plataforma"}):
+            return 3, TEXTO_PASO_3
+        return None, None
+
+    # Paso 3 -> Paso 4
+    if "precio promocional" in ultima_carla and "18 bonos" in ultima_carla and "plataforma por dentro" in ultima_carla:
+        if "bonos.pdf" in historial_unido or "video-plataforma.mp4" in historial_unido:
+            return None, None
+        if es_afirmativa or bool(set_palabras & {"precio", "oferta", "bonos", "promocion"}):
+            return 4, TEXTO_PASO_4
+        return None, None
+
+    return None, None
+
+
+def seleccionar_anexos(numero_remitente, texto_recibido, media_recibida):
+    """Inyecta dinámicamente solo los anexos relevantes para este turno (pueden combinarse varios)."""
+    texto_norm = normalizar_texto(texto_recibido)
+
+    with semaforo:
+        est = estado_remarketing.get(numero_remitente, {})
+        link_enviado = bool(est.get("link_enviado"))
+        pago_confirmado = bool(est.get("pago_confirmado"))
+
+    usar_temario = any(k in texto_norm for k in DISPARADORES_TEMARIO)
+    usar_pagos = bool(media_recibida) or (link_enviado and not pago_confirmado) or any(k in texto_norm for k in DISPARADORES_PAGOS)
+    usar_postpago = bool(media_recibida) or pago_confirmado or any(k in texto_norm for k in DISPARADORES_POSTPAGO)
+
+    bloques = []
+    nombres = []
+
+    if usar_temario:
+        contenido = leer_archivo_texto(ARCHIVO_ANEXO_TEMARIO)
+        if contenido:
+            bloques.append(contenido)
+            nombres.append("temario")
+
+    if usar_pagos:
+        contenido = leer_archivo_texto(ARCHIVO_ANEXO_PAGOS)
+        if contenido:
+            bloques.append(contenido)
+            nombres.append("pagos")
+
+    if usar_postpago:
+        contenido = leer_archivo_texto(ARCHIVO_ANEXO_POSTPAGO)
+        if contenido:
+            bloques.append(contenido)
+            nombres.append("postpago")
+
+    return "\n\n".join(bloques), nombres
 
 
 def esta_bot_pausado(telefono):
@@ -220,6 +477,59 @@ def actualizar_y_programar_remarketing(telefono, respuesta_carla):
         log(f"[REMARKETING PROGRAMADO] {telefono} ({modo}) para {objetivo.strftime('%d/%m %H:%M')} ({int(segundos_espera)}s)")
 
 
+def llamar_gemini_api(instruccion_sistema, prompt_usuario, partes_adjuntas=None, temperatura=0.4):
+    """Llama a Gemini 3.5 Flash-Lite usando systemInstruction (con respaldo defensivo si el endpoint lo rechaza)."""
+    url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
+    headers_gemini = {"Content-Type": "application/json"}
+    parts_payload = [{"text": prompt_usuario}] + (partes_adjuntas or [])
+
+    payload = {
+        "systemInstruction": {"parts": [{"text": instruccion_sistema}]},
+        "contents": [{"role": "user", "parts": parts_payload}],
+        "generationConfig": {"temperature": temperatura},
+    }
+
+    res = None
+    for intento in range(2):
+        try:
+            res = requests.post(url_gemini, headers=headers_gemini, json=payload, timeout=(10, 30))
+            if res.status_code == 200:
+                return res
+            log(f"[GEMINI ERROR] Intento {intento + 1} HTTP {res.status_code}: {res.text[:250]}")
+            # Respaldo defensivo si un endpoint rechazara systemInstruction
+            if res.status_code == 400 and "system" in res.text.lower() and intento == 0:
+                log("[GEMINI] Reintentando con prompt combinado por compatibilidad de systemInstruction.")
+                payload = {
+                    "contents": [{"parts": [{"text": f"{instruccion_sistema}\n\n{prompt_usuario}"}] + (partes_adjuntas or [])}],
+                    "generationConfig": {"temperature": temperatura},
+                }
+                continue
+            if res.status_code in (429, 500, 502, 503, 504) and intento == 0:
+                time.sleep(2.0)
+                continue
+            break
+        except requests.exceptions.RequestException as e:
+            log(f"[GEMINI EXCEPCION] Intento {intento + 1}: {e}")
+            if intento == 0:
+                time.sleep(2.0)
+                continue
+
+    # Respaldo automático: si falla con adjunto, reintenta solo con texto para no colgar el chat
+    if (res is None or res.status_code != 200) and partes_adjuntas:
+        log("[GEMINI] Reintentando solo con texto tras fallo con adjunto.")
+        payload_fallback = {
+            "systemInstruction": {"parts": [{"text": instruccion_sistema}]},
+            "contents": [{"role": "user", "parts": [{"text": prompt_usuario}]}],
+            "generationConfig": {"temperature": temperatura},
+        }
+        try:
+            res = requests.post(url_gemini, headers=headers_gemini, json=payload_fallback, timeout=(10, 25))
+        except requests.exceptions.RequestException as e:
+            log(f"[GEMINI FALLBACK EXCEPCION] {e}")
+
+    return res
+
+
 def ejecutar_remarketing(numero_remitente):
     """Genera con Gemini un seguimiento humano contextual y lo guarda en el historial para continuar el flujo."""
     global historial_conversaciones
@@ -260,14 +570,8 @@ def ejecutar_remarketing(numero_remitente):
             log("[REMARKETING ERROR] GEMINI_API_KEY no configurada.")
             return
 
-        try:
-            with open("prompt_ventas.txt", "r", encoding="utf-8") as archivo:
-                instruccion_base = archivo.read().strip()
-        except Exception as e:
-            log(f"[REMARKETING PROMPT ERROR] {e}")
-            instruccion_base = "Eres Carla, asesora de ventas de Creas y Aprendes."
-
-        texto_historial = "\n\nÚltimos mensajes de contexto:\n" + "\n".join(memoria) if memoria else ""
+        instruccion_base = cargar_prompt_nucleo()
+        texto_historial = "Últimos mensajes de contexto:\n" + "\n".join(memoria) if memoria else ""
 
         if modo == "POST_PRECIO":
             orden_interna = (
@@ -294,39 +598,20 @@ def ejecutar_remarketing(numero_remitente):
                 "y cierra en el último párrafo SOLO ofreciéndole ayuda inmediata si se trabó en algún paso (como con *Yape* o el método que eligió).]"
             )
 
-        prompt_rmk = f"{instruccion_base}{texto_historial}{orden_interna}"
-        url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
-        payload_gemini = {
-            "contents": [{"parts": [{"text": prompt_rmk}]}],
-            "generationConfig": {"temperature": 0.25},
-        }
-
-        res = None
-        for intento in range(2):
-            try:
-                res = requests.post(
-                    url_gemini,
-                    headers={"Content-Type": "application/json"},
-                    json=payload_gemini,
-                    timeout=(10, 30),
-                )
-                if res.status_code == 200:
-                    break
-                log(f"[REMARKETING GEMINI ERROR] Intento {intento + 1} HTTP {res.status_code}: {res.text[:200]}")
-                if res.status_code in (429, 500, 502, 503, 504) and intento == 0:
-                    time.sleep(2.0)
-                    continue
-                break
-            except requests.exceptions.RequestException as e:
-                log(f"[REMARKETING GEMINI EXCEPCION] Intento {intento + 1}: {e}")
-                if intento == 0:
-                    time.sleep(2.0)
-                    continue
+        prompt_rmk = f"{texto_historial}{orden_interna}".strip()
+        res = llamar_gemini_api(instruccion_base, prompt_rmk, temperatura=0.25)
 
         if res is None or res.status_code != 200:
             return
 
         data = res.json()
+        usage = data.get("usageMetadata") or {}
+        log(
+            f"[TOKENS RMK {numero_remitente}] entrada={usage.get('promptTokenCount', 0)} | "
+            f"cache={usage.get('cachedContentTokenCount', 0)} | "
+            f"salida={usage.get('candidatesTokenCount', 0)}"
+        )
+
         candidates = data.get("candidates") or []
         parts = (candidates[0].get("content", {}).get("parts") or []) if candidates else []
         texto_rmk = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
@@ -355,7 +640,7 @@ def ejecutar_remarketing(numero_remitente):
                 est = _obtener_estado_rmk_locked(numero_remitente)
                 est["enviado"] = True
                 memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
-                memoria_actual.append(f"Tú: {texto_rmk}")
+                memoria_actual.append(f"Tú: {compactar_para_historial(texto_rmk)}")
                 historial_conversaciones[numero_remitente] = memoria_actual[-20:]
 
             registrar_interaccion(
@@ -517,137 +802,8 @@ def enviar_multimedia_whatsapp(telefono_destino, tipo_media, url_archivo, nombre
         return False
 
 
-# --- CEREBRO DE CARLA (GEMINI 3.5 FLASH-LITE + VISIÓN DE IMÁGENES Y PDF) ---
-def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=None):
-    global historial_conversaciones
-
-    if esta_bot_pausado(numero_remitente):
-        return
-
-    respuesta_final = "Lo siento, tengo un problema técnico temporal."
-    gemini_ok = False
-
-    if GEMINI_API_KEY:
-        try:
-            url_gemini = f"https://generativelanguage.googleapis.com/v1/models/gemini-3.5-flash-lite:generateContent?key={GEMINI_API_KEY}"
-            headers_gemini = {"Content-Type": "application/json"}
-
-            try:
-                with open("prompt_ventas.txt", "r", encoding="utf-8") as archivo:
-                    instruccion_base = archivo.read().strip()
-            except Exception as e:
-                log(f"[PROMPT ERROR] No se pudo leer prompt_ventas.txt: {e}")
-                instruccion_base = "Eres un asistente de ventas."
-
-            with semaforo:
-                memoria = list(historial_conversaciones.get(numero_remitente, []))
-
-            texto_historial = ""
-            if memoria:
-                texto_historial = "\n\nÚltimos mensajes de contexto:\n" + "\n".join(memoria)
-
-            nota_vision = ""
-            partes_adjuntas = []
-
-            if media_recibida:
-                for item in media_recibida[:2]:
-                    contenido_bytes, mime_real = descargar_media_whatsapp(item.get("media_id"))
-                    mime_usar = (mime_real or item.get("mime_type") or "").split(";")[0].strip().lower()
-                    if contenido_bytes and len(contenido_bytes) <= MAX_BYTES_GEMINI and mime_usar in MIME_SOPORTADOS_GEMINI:
-                        b64 = base64.b64encode(contenido_bytes).decode("utf-8")
-                        partes_adjuntas.append({
-                            "inline_data": {
-                                "mime_type": mime_usar,
-                                "data": b64,
-                            }
-                        })
-
-                if partes_adjuntas:
-                    nota_vision = (
-                        "\n\n[INSTRUCCIÓN DE VISIÓN: El prospecto adjuntó una imagen o documento PDF. "
-                        "Obsérvalo con atención (puede ser un comprobante de Yape/Tarjeta, un voucher CIP pendiente o pagado de PagoEfectivo, "
-                        "una captura del correo de Hotmart o un error en pantalla) y responde exactamente según lo que ves y tus reglas del prompt.]"
-                    )
-
-            prompt = f"{instruccion_base}{texto_historial}{nota_vision}\n\nMensaje actual del prospecto: '{texto_recibido}'"
-
-            parts_payload = [{"text": prompt}] + partes_adjuntas
-            payload_gemini = {
-                "contents": [{"parts": parts_payload}],
-                "generationConfig": {"temperature": 0.4},
-            }
-
-            res = None
-            for intento in range(2):
-                try:
-                    res = requests.post(url_gemini, headers=headers_gemini, json=payload_gemini, timeout=(10, 30))
-                    if res.status_code == 200:
-                        break
-                    log(f"[GEMINI ERROR] Intento {intento + 1} HTTP {res.status_code}: {res.text[:250]}")
-                    if res.status_code in (429, 500, 502, 503, 504) and intento == 0:
-                        time.sleep(2.0)
-                        continue
-                    break
-                except requests.exceptions.RequestException as e:
-                    log(f"[GEMINI EXCEPCION] Intento {intento + 1}: {e}")
-                    if intento == 0:
-                        time.sleep(2.0)
-                        continue
-
-            # Respaldo automático: si falla con adjunto, reintenta solo con texto para no colgar el chat
-            if (res is None or res.status_code != 200) and partes_adjuntas:
-                log("[GEMINI] Reintentando solo con texto tras fallo con adjunto.")
-                payload_fallback = {
-                    "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {"temperature": 0.4},
-                }
-                res = requests.post(url_gemini, headers=headers_gemini, json=payload_fallback, timeout=(10, 25))
-
-            if res is not None and res.status_code == 200:
-                data = res.json()
-                candidates = data.get("candidates") or []
-                parts = (candidates[0].get("content", {}).get("parts") or []) if candidates else []
-                texto_generado = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
-
-                if texto_generado:
-                    respuesta_final = texto_generado
-                    gemini_ok = True
-                    # Salvavidas de video de bienvenida: si Gemini olvidó la etiqueta [VIDEO:...], la inyecta
-                    if "video de arriba" in respuesta_final.lower() and "[VIDEO:" not in respuesta_final.upper():
-                        respuesta_final = f"[VIDEO:{URL_VIDEO_GANCHO}]\n{respuesta_final}"
-                        log(f"[SALVAVIDAS VIDEO] Etiqueta de video-gancho inyectada para {numero_remitente}")
-                else:
-                    log(f"[GEMINI AVISO] Respuesta vacía: {str(data)[:250]}")
-
-                # Si pausaste a Carla justo mientras Gemini pensaba, no envía nada
-                if esta_bot_pausado(numero_remitente):
-                    return
-
-                # --- INTERCEPTOR ANTI-DOBLE RESPUESTA (BLINDADO) ---
-                with semaforo:
-                    if numero_remitente in buzon_mensajes and buzon_mensajes[numero_remitente]:
-                        buzon_mensajes[numero_remitente].insert(0, texto_recibido)
-                        if media_recibida:
-                            buzon_media.setdefault(numero_remitente, [])
-                            buzon_media[numero_remitente] = media_recibida + buzon_media[numero_remitente]
-                        if numero_remitente not in timers or not timers[numero_remitente].is_alive():
-                            nuevo_timer = threading.Timer(
-                                ESPERA_SEGUNDOS, despachar_buzon, args=[numero_remitente]
-                            )
-                            nuevo_timer.daemon = True
-                            timers[numero_remitente] = nuevo_timer
-                            nuevo_timer.start()
-                        return
-
-                    memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
-                    memoria_actual.append(f"Cliente: {texto_recibido}")
-                    memoria_actual.append(f"Tú: {respuesta_final}")
-                    historial_conversaciones[numero_remitente] = memoria_actual[-20:]
-        except Exception:
-            log(f"[GEMINI ERROR GENERAL] {traceback.format_exc()}")
-    else:
-        log("[GEMINI ERROR] GEMINI_API_KEY no configurada.")
-
+def enviar_respuesta_carla(numero_remitente, respuesta_final, activar_remarketing=True):
+    """Envía texto y/o multimedia en orden a WhatsApp, registra en el panel y actualiza remarketing."""
     if esta_bot_pausado(numero_remitente):
         return
 
@@ -718,10 +874,139 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
         )
 
         # Programar o actualizar reloj de remarketing de 2 horas (solo tras precio o link)
-        if gemini_ok:
+        if activar_remarketing:
             actualizar_y_programar_remarketing(numero_remitente, respuesta_final)
     except Exception:
         log(f"[ENVIO ERROR GENERAL] {traceback.format_exc()}")
+
+
+# --- CEREBRO DE CARLA (PASOS 1-4 GRATIS + NÚCLEO FIJO + 3 ANEXOS + VISIÓN) ---
+def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=None):
+    global historial_conversaciones
+
+    if esta_bot_pausado(numero_remitente):
+        return
+
+    with semaforo:
+        memoria = list(historial_conversaciones.get(numero_remitente, []))
+
+    # --- 1. ATAJO GRATIS BLINDADO (PASOS 1 AL 4 SIN CONSUMIR TOKENS DE IA) ---
+    paso_gratis, respuesta_gratis = detectar_paso_gratis(texto_recibido, media_recibida, memoria)
+    if paso_gratis and respuesta_gratis:
+        with semaforo:
+            if esta_bot_pausado(numero_remitente):
+                return
+            memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
+            memoria_actual.append(f"Cliente: {texto_recibido}")
+            memoria_actual.append(f"Tú: {compactar_para_historial(respuesta_gratis)}")
+            historial_conversaciones[numero_remitente] = memoria_actual[-20:]
+
+        log(f"[PASO {paso_gratis} GRATIS] {numero_remitente} | tokens=0")
+        enviar_respuesta_carla(numero_remitente, respuesta_gratis, activar_remarketing=True)
+        return
+
+    # --- 2. CEREBRO GEMINI 3.5 FLASH-LITE (NÚCLEO EN systemInstruction + ANEXOS BAJO DEMANDA) ---
+    respuesta_final = "Lo siento, tengo un problema técnico temporal."
+    gemini_ok = False
+
+    if GEMINI_API_KEY:
+        try:
+            instruccion_base = cargar_prompt_nucleo()
+            bloque_anexos, anexos_usados = seleccionar_anexos(numero_remitente, texto_recibido, media_recibida)
+
+            texto_historial = ""
+            if memoria:
+                texto_historial = "Últimos mensajes de contexto:\n" + "\n".join(memoria)
+
+            nota_vision = ""
+            partes_adjuntas = []
+
+            if media_recibida:
+                for item in media_recibida[:2]:
+                    contenido_bytes, mime_real = descargar_media_whatsapp(item.get("media_id"))
+                    mime_usar = (mime_real or item.get("mime_type") or "").split(";")[0].strip().lower()
+                    if contenido_bytes and len(contenido_bytes) <= MAX_BYTES_GEMINI and mime_usar in MIME_SOPORTADOS_GEMINI:
+                        b64 = base64.b64encode(contenido_bytes).decode("utf-8")
+                        partes_adjuntas.append({
+                            "inline_data": {
+                                "mime_type": mime_usar,
+                                "data": b64,
+                            }
+                        })
+
+                if partes_adjuntas:
+                    nota_vision = (
+                        "[INSTRUCCIÓN DE VISIÓN: El prospecto adjuntó una imagen o documento PDF. "
+                        "Obsérvalo con atención (puede ser un comprobante de Yape/Tarjeta, un voucher CIP pendiente o pagado de PagoEfectivo, "
+                        "una captura del correo de Hotmart o un error en pantalla) y responde exactamente según lo que ves y tus reglas.]"
+                    )
+
+            secciones_usuario = []
+            if bloque_anexos:
+                secciones_usuario.append(bloque_anexos)
+            if texto_historial:
+                secciones_usuario.append(texto_historial)
+            if nota_vision:
+                secciones_usuario.append(nota_vision)
+            secciones_usuario.append(f"Mensaje actual del prospecto: '{texto_recibido}'")
+            prompt_usuario = "\n\n".join(secciones_usuario)
+
+            res = llamar_gemini_api(instruccion_base, prompt_usuario, partes_adjuntas=partes_adjuntas, temperatura=0.4)
+
+            if res is not None and res.status_code == 200:
+                data = res.json()
+                usage = data.get("usageMetadata") or {}
+                log(
+                    f"[TOKENS {numero_remitente}] anexos={anexos_usados or ['ninguno']} | "
+                    f"entrada={usage.get('promptTokenCount', 0)} | "
+                    f"cache={usage.get('cachedContentTokenCount', 0)} | "
+                    f"salida={usage.get('candidatesTokenCount', 0)}"
+                )
+
+                candidates = data.get("candidates") or []
+                parts = (candidates[0].get("content", {}).get("parts") or []) if candidates else []
+                texto_generado = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+
+                if texto_generado:
+                    respuesta_final = texto_generado
+                    gemini_ok = True
+                    # Salvavidas de video de bienvenida: si Gemini olvidó la etiqueta [VIDEO:...], la inyecta
+                    if "video de arriba" in respuesta_final.lower() and "[VIDEO:" not in respuesta_final.upper():
+                        respuesta_final = f"[VIDEO:{URL_VIDEO_GANCHO}]\n{respuesta_final}"
+                        log(f"[SALVAVIDAS VIDEO] Etiqueta de video-gancho inyectada para {numero_remitente}")
+                else:
+                    log(f"[GEMINI AVISO] Respuesta vacía: {str(data)[:250]}")
+
+                # Si pausaste a Carla justo mientras Gemini pensaba, no envía nada
+                if esta_bot_pausado(numero_remitente):
+                    return
+
+                # --- INTERCEPTOR ANTI-DOBLE RESPUESTA (BLINDADO) ---
+                with semaforo:
+                    if numero_remitente in buzon_mensajes and buzon_mensajes[numero_remitente]:
+                        buzon_mensajes[numero_remitente].insert(0, texto_recibido)
+                        if media_recibida:
+                            buzon_media.setdefault(numero_remitente, [])
+                            buzon_media[numero_remitente] = media_recibida + buzon_media[numero_remitente]
+                        if numero_remitente not in timers or not timers[numero_remitente].is_alive():
+                            nuevo_timer = threading.Timer(
+                                ESPERA_SEGUNDOS, despachar_buzon, args=[numero_remitente]
+                            )
+                            nuevo_timer.daemon = True
+                            timers[numero_remitente] = nuevo_timer
+                            nuevo_timer.start()
+                        return
+
+                    memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
+                    memoria_actual.append(f"Cliente: {texto_recibido}")
+                    memoria_actual.append(f"Tú: {compactar_para_historial(respuesta_final)}")
+                    historial_conversaciones[numero_remitente] = memoria_actual[-20:]
+        except Exception:
+            log(f"[GEMINI ERROR GENERAL] {traceback.format_exc()}")
+    else:
+        log("[GEMINI ERROR] GEMINI_API_KEY no configurada.")
+
+    enviar_respuesta_carla(numero_remitente, respuesta_final, activar_remarketing=gemini_ok)
 
 
 def despachar_buzon(numero_remitente):
@@ -761,7 +1046,7 @@ def despachar_buzon(numero_remitente):
 # --- RUTAS PRINCIPALES Y WEBHOOK ---
 @app.route("/", methods=["GET"])
 def home():
-    return "Servidor activo, conectado a WhatsApp y Gemini 3.5 Flash-Lite.", 200
+    return "Servidor activo, conectado a WhatsApp y Gemini 3.5 Flash-Lite (Arquitectura Modular).", 200
 
 
 @app.route("/webhook", methods=["GET", "POST"])
