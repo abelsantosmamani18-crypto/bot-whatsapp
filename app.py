@@ -29,12 +29,17 @@ TZ_PERU = timezone(timedelta(hours=-5))
 MIME_SOPORTADOS_GEMINI = {"image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"}
 MAX_BYTES_GEMINI = 5 * 1024 * 1024  # 5 MB máximo para proteger RAM en Render
 
-# --- ARCHIVOS DE PROMPT MODULAR (NÚCLEO + 3 ANEXOS + RESPALDO) ---
-ARCHIVO_NUCLEO = "prompt_nucleo.txt"
-ARCHIVO_FALLBACK = "prompt_ventas.txt"
-ARCHIVO_ANEXO_TEMARIO = "anexo_temario.txt"
-ARCHIVO_ANEXO_PAGOS = "anexo_pagos.txt"
-ARCHIVO_ANEXO_POSTPAGO = "anexo_postpago.txt"
+# --- ARCHIVO ÚNICO DE PROMPT CON SEPARADORES INTERNOS ---
+ARCHIVO_PROMPT = "prompt_ventas.txt"
+PATRON_SEPARADORES = re.compile(
+    r"^\s*===\s*(ANEXO_TEMARIO|ANEXO_PAGOS|ANEXO_POSTPAGO)\s*===\s*$",
+    flags=re.MULTILINE | re.IGNORECASE,
+)
+MAPA_SEPARADORES = {
+    "ANEXO_TEMARIO": "temario",
+    "ANEXO_PAGOS": "pagos",
+    "ANEXO_POSTPAGO": "postpago",
+}
 
 # --- URLs MULTIMEDIA Y TEXTOS FIJOS DEL EMBUDO (PASOS 1 AL 4 GRATIS) ---
 URL_VIDEO_GANCHO = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/video-gancho.mp4"
@@ -201,12 +206,44 @@ def leer_archivo_texto(ruta, fallback=""):
         return fallback
 
 
-def cargar_prompt_nucleo():
-    nucleo = leer_archivo_texto(ARCHIVO_NUCLEO)
-    if nucleo:
-        return nucleo
-    log(f"[PROMPT AVISO] {ARCHIVO_NUCLEO} no encontrado; usando respaldo {ARCHIVO_FALLBACK}.")
-    return leer_archivo_texto(ARCHIVO_FALLBACK, "Eres Carla, asesora de ventas de Creas y Aprendes.")
+def cargar_prompt_modular():
+    """
+    Lee `prompt_ventas.txt` y lo separa en memoria en:
+    nucleo + temario + pagos + postpago usando las líneas ===ANEXO_...===.
+    Si falta algún separador, avisa en los logs de Render y sigue funcionando con respaldo.
+    """
+    contenido = leer_archivo_texto(ARCHIVO_PROMPT)
+    if not contenido:
+        log(f"[PROMPT ERROR] {ARCHIVO_PROMPT} no encontrado o vacío.")
+        return {
+            "nucleo": "Eres Carla, asesora de ventas de Creas y Aprendes.",
+            "temario": "",
+            "pagos": "",
+            "postpago": "",
+        }
+
+    secciones = {"nucleo": "", "temario": "", "pagos": "", "postpago": ""}
+    partes = PATRON_SEPARADORES.split(contenido)
+    secciones["nucleo"] = partes[0].strip()
+
+    for idx in range(1, len(partes), 2):
+        clave_sep = partes[idx].strip().upper()
+        bloque = partes[idx + 1].strip() if (idx + 1) < len(partes) else ""
+        nombre_seccion = MAPA_SEPARADORES.get(clave_sep)
+        if nombre_seccion:
+            secciones[nombre_seccion] = bloque
+
+    if len(partes) == 1:
+        log(f"[PROMPT AVISO] No se detectaron separadores ===ANEXO_...=== en {ARCHIVO_PROMPT}; usando archivo completo.")
+    else:
+        faltantes = [k for k in ("temario", "pagos", "postpago") if not secciones[k]]
+        if faltantes:
+            log(f"[PROMPT AVISO] Secciones vacías o sin separador en {ARCHIVO_PROMPT}: {faltantes}")
+
+    if not secciones["nucleo"]:
+        secciones["nucleo"] = contenido
+
+    return secciones
 
 
 def limpiar_etiquetas_para_panel(texto):
@@ -302,7 +339,7 @@ def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
     return None, None
 
 
-def seleccionar_anexos(numero_remitente, texto_recibido, media_recibida):
+def seleccionar_anexos(numero_remitente, texto_recibido, media_recibida, secciones):
     """Inyecta dinámicamente solo los anexos relevantes para este turno (pueden combinarse varios)."""
     texto_norm = normalizar_texto(texto_recibido)
     set_palabras = set(re.findall(r"[a-z0-9]+", texto_norm))
@@ -330,23 +367,17 @@ def seleccionar_anexos(numero_remitente, texto_recibido, media_recibida):
     bloques = []
     nombres = []
 
-    if usar_temario:
-        contenido = leer_archivo_texto(ARCHIVO_ANEXO_TEMARIO)
-        if contenido:
-            bloques.append(contenido)
-            nombres.append("temario")
+    if usar_temario and secciones.get("temario"):
+        bloques.append(secciones["temario"])
+        nombres.append("temario")
 
-    if usar_pagos:
-        contenido = leer_archivo_texto(ARCHIVO_ANEXO_PAGOS)
-        if contenido:
-            bloques.append(contenido)
-            nombres.append("pagos")
+    if usar_pagos and secciones.get("pagos"):
+        bloques.append(secciones["pagos"])
+        nombres.append("pagos")
 
-    if usar_postpago:
-        contenido = leer_archivo_texto(ARCHIVO_ANEXO_POSTPAGO)
-        if contenido:
-            bloques.append(contenido)
-            nombres.append("postpago")
+    if usar_postpago and secciones.get("postpago"):
+        bloques.append(secciones["postpago"])
+        nombres.append("postpago")
 
     return "\n\n".join(bloques), nombres
 
@@ -589,7 +620,8 @@ def ejecutar_remarketing(numero_remitente):
             log("[REMARKETING ERROR] GEMINI_API_KEY no configurada.")
             return
 
-        instruccion_base = cargar_prompt_nucleo()
+        secciones = cargar_prompt_modular()
+        instruccion_base = secciones["nucleo"]
         texto_historial = "Últimos mensajes de contexto:\n" + "\n".join(memoria) if memoria else ""
 
         if modo == "POST_PRECIO":
@@ -899,7 +931,7 @@ def enviar_respuesta_carla(numero_remitente, respuesta_final, activar_remarketin
         log(f"[ENVIO ERROR GENERAL] {traceback.format_exc()}")
 
 
-# --- CEREBRO DE CARLA (PASOS 1-4 GRATIS + NÚCLEO FIJO + 3 ANEXOS + VISIÓN) ---
+# --- CEREBRO DE CARLA (PASOS 1-4 GRATIS + NÚCLEO FIJO + 3 ANEXOS DESDE 1 SOLO TXT + VISIÓN) ---
 def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=None):
     global historial_conversaciones
 
@@ -931,8 +963,11 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
 
     if GEMINI_API_KEY:
         try:
-            instruccion_base = cargar_prompt_nucleo()
-            bloque_anexos, anexos_usados = seleccionar_anexos(numero_remitente, texto_recibido, media_recibida)
+            secciones = cargar_prompt_modular()
+            instruccion_base = secciones["nucleo"]
+            bloque_anexos, anexos_usados = seleccionar_anexos(
+                numero_remitente, texto_recibido, media_recibida, secciones
+            )
 
             texto_historial = ""
             if memoria:
