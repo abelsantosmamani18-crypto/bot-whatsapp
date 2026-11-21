@@ -356,7 +356,7 @@ def ejecutar_remarketing(numero_remitente):
                 est["enviado"] = True
                 memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
                 memoria_actual.append(f"Tú: {texto_rmk}")
-                historial_conversaciones[numero_remitente] = memoria_actual[-12:]
+                historial_conversaciones[numero_remitente] = memoria_actual[-20:]
 
             registrar_interaccion(
                 telefono=numero_remitente,
@@ -642,7 +642,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
                     memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
                     memoria_actual.append(f"Cliente: {texto_recibido}")
                     memoria_actual.append(f"Tú: {respuesta_final}")
-                    historial_conversaciones[numero_remitente] = memoria_actual[-12:]
+                    historial_conversaciones[numero_remitente] = memoria_actual[-20:]
         except Exception:
             log(f"[GEMINI ERROR GENERAL] {traceback.format_exc()}")
     else:
@@ -1078,7 +1078,7 @@ def api_send_manual():
 
         memoria_actual = list(historial_conversaciones.get(telefono, []))
         memoria_actual.append(f"Tú: {texto}")
-        historial_conversaciones[telefono] = memoria_actual[-12:]
+        historial_conversaciones[telefono] = memoria_actual[-20:]
 
     registrar_interaccion(
         telefono=telefono,
