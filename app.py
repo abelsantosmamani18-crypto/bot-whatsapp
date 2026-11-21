@@ -48,6 +48,13 @@ URL_CERTIFICADO = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-wha
 URL_PLATAFORMA = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/video-plataforma.mp4"
 URL_BONOS = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/bonos.pdf"
 
+CATALOGO_ARCHIVOS_RESPALDO = {
+    "temario.pdf": f"[DOCUMENT:{URL_TEMARIO}]",
+    "certificado.png": f"[IMAGE:{URL_CERTIFICADO}]",
+    "video-plataforma.mp4": f"[VIDEO:{URL_PLATAFORMA}]",
+    "bonos.pdf": f"[DOCUMENT:{URL_BONOS}]",
+}
+
 TEXTO_PASO_1 = (
     f"[VIDEO:{URL_VIDEO_GANCHO}]\n"
     "¡Hola! Soy *Carla*, te doy la súper bienvenida a *Creas y Aprendes* 👋. "
@@ -147,8 +154,9 @@ DISPARADORES_POSTPAGO = (
     "constancia", "pedido recibido", "correo", "email", "mail", "gmail",
     "spam", "bandeja", "no me llega", "no llega", "hotmart", "aplicacion",
     "play store", "app store", "acceder", "acceso", "entrar", "ingresar", "ingreso",
-    "mis compras", "contrasena", "clave", "6 digitos", "digitos", "codigo", "verificar",
-    "verificacion", "grupo", "vip", "comunidad", "descripcion",
+    "mis compras", "contrasena", "clave", "6 digitos", "digitos",
+    "codigo de 6", "codigo de seguridad", "codigo de verificacion", "codigo al correo",
+    "verificar", "verificacion", "grupo", "vip", "comunidad", "descripcion",
     "equivoque", "mal escrito", "cambiar correo", "cambio de correo",
 )
 
@@ -257,13 +265,34 @@ def limpiar_etiquetas_para_panel(texto):
 
 
 def compactar_para_historial(texto):
-    """Reemplaza URLs largas de multimedia por marcas cortas para ahorrar tokens sin perder memoria."""
+    """Reemplaza URLs largas de multimedia por notas simples sin corchetes para ahorrar tokens sin que la IA las imite."""
     if not texto:
         return ""
     def _reemplazar(match):
         archivo = match.group(2).strip().split("/")[-1]
-        return f"[ARCHIVO ENVIADO: {archivo}]"
+        return f"(archivo ya enviado antes: {archivo})"
     return re.sub(r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):([^\]]+)\]', _reemplazar, texto, flags=re.IGNORECASE).strip()
+
+
+def normalizar_etiquetas_multimedia(texto):
+    """Salvavidas: convierte marcas de historial o nombres sin URL en la etiqueta real [TIPO:URL] para enviar el archivo."""
+    if not texto:
+        return ""
+
+    def _reemplazar_marca(match):
+        archivo = match.group(1).strip().lower()
+        etiqueta = CATALOGO_ARCHIVOS_RESPALDO.get(archivo)
+        if etiqueta:
+            log(f"[SALVAVIDAS ARCHIVO] Etiqueta reconstruida automáticamente para {archivo}")
+            return etiqueta
+        return match.group(0)
+
+    patron_respaldo = (
+        r'(?:\[\s*(?:ARCHIVO\s+ENVIADO|DOCUMENT|IMAGE|VIDEO)\s*:\s*|\(\s*archivo\s+ya\s+enviado\s+antes\s*:\s*)'
+        r'(bonos\.pdf|temario\.pdf|certificado\.png|video-plataforma\.mp4)'
+        r'\s*(?:\]|\))'
+    )
+    return re.sub(patron_respaldo, _reemplazar_marca, texto, flags=re.IGNORECASE)
 
 
 def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
@@ -414,8 +443,20 @@ def _obtener_estado_rmk_locked(telefono):
 
 
 def registrar_actividad_cliente_rmk(telefono, texto_cliente=""):
-    """Cancela cualquier remarketing pendiente y registra si el cliente indica que ya pagó."""
-    texto_low = (texto_cliente or "").lower()
+    """Cancela cualquier remarketing pendiente y actualiza si el cliente indica que ya pagó o que aún no paga."""
+    texto_norm = normalizar_texto(texto_cliente)
+    senales_no_pago_cliente = (
+        "no he pag",
+        "no pague",
+        "no lo he pag",
+        "todavia no pag",
+        "todavia no he pag",
+        "aun no pag",
+        "aun no he pag",
+        "no hice el pago",
+        "no realice el pago",
+        "sin pagar",
+    )
     senales_pago_cliente = (
         "ya pagu",
         "ya lo pagu",
@@ -437,7 +478,9 @@ def registrar_actividad_cliente_rmk(telefono, texto_cliente=""):
         _cancelar_timer_remarketing_locked(telefono)
         est = _obtener_estado_rmk_locked(telefono)
         est["ultima_interaccion_cliente"] = time.time()
-        if any(s in texto_low for s in senales_pago_cliente):
+        if any(s in texto_norm for s in senales_no_pago_cliente):
+            est["pago_confirmado"] = False
+        elif any(s in texto_norm for s in senales_pago_cliente):
             est["pago_confirmado"] = True
 
 
@@ -1023,7 +1066,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
                 texto_generado = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
 
                 if texto_generado:
-                    respuesta_final = texto_generado
+                    respuesta_final = normalizar_etiquetas_multimedia(texto_generado)
                     gemini_ok = True
                     # Salvavidas de video de bienvenida: si Gemini olvidó la etiqueta [VIDEO:...], la inyecta
                     if "video de arriba" in respuesta_final.lower() and "[VIDEO:" not in respuesta_final.upper():
