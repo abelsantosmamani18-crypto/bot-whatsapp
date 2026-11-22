@@ -57,15 +57,15 @@ CATALOGO_ARCHIVOS_RESPALDO = {
 
 TEXTO_PASO_1 = (
     f"[VIDEO:{URL_VIDEO_GANCHO}]\n"
-    "¡Hola! Soy *Carla*, te doy la súper bienvenida a *Creas y Aprendes* 👋. "
-    "En el video de arriba, nuestra *instructora Laura* te da una presentación de todo lo que lograrás crear ✨.\n\n"
-    "Cuéntame, ¿te gustaría *crear tu propia marca* de velas y jabones y poder tener un *negocio rentable*? 😊"
+    "¡Hola! Soy *Carla*, te doy la bienvenida a *Creas y Aprendes* 👋. "
+    "En el video de arriba, nuestra instructora *Laura Salamanca* te muestra todo lo que lograrás crear con nuestro *programa 3x1* ✨.\n\n"
+    "Cuéntame, ¿te gustaría aprender desde cero para *crear tu propia marca* de velas y jabones y tener un *negocio rentable* desde casa? 😊"
 )
 
 TEXTO_PASO_2 = (
     "¡Me alegra muchísimo! Aquí aprenderás *paso a paso desde cero*, con las medidas y temperaturas exactas "
     "para no desperdiciar materiales, hasta crear diseños profesionales y venderlos bajo tu propia marca ✨.\n\n"
-    "¿Te envío el *temario oficial* para que revises todos los módulos al detalle? 📋"
+    "¿Te gustaría que te envíe el *temario oficial* para que revises todos los módulos al detalle? 📋"
 )
 
 TEXTO_PASO_3 = (
