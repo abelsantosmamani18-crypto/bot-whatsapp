@@ -87,6 +87,17 @@ TEXTO_PASO_4 = (
     "Hoy solo me quedan *3 cupos* con el *50% de descuento* del *3x1*, ¿tienes alguna consulta o te envío el *enlace oficial* para asegurar el tuyo? 🔥"
 )
 
+# --- ROTACIÓN AUTOMÁTICA DE ESCASEZ PARA CASO D (POST-PRECIO / PRE-LINK) ---
+ROTACION_CASO_D = (
+    ("¿Aprovechamos...", "el precio promocional de *S/ 110.00* (único pago de por vida) antes de que vuelva a ~S/ 220.00~", "🔥"),
+    ("¿Aseguras...", "el *50% de descuento* activo hoy por tiempo limitado para recibir tu *enlace oficial*", "✨"),
+    ("¿Arrancamos...", "hoy mismo con la oferta *3x1* (*3 programas completos* por el precio de 1)", "🎓"),
+    ("¿Desbloqueamos...", "hoy gratis tus *18 bonos exclusivos* junto con tu acceso de por vida", "🎁"),
+    ("¿Te animas a separar...", "tu lugar hoy sin riesgo respaldada por los *7 días de garantía* en Hotmart", "🛡️"),
+    ("¿Separamos...", "tu ingreso hoy para arrancar acompañada desde casa en la *Comunidad VIP*", "📲"),
+    ("¿Quieres asegurar...", "uno de los últimos *3 cupos de hoy* antes de que cierre la promoción", "📩"),
+)
+
 # --- REGLAS DE FILTRO CONSERVADOR (PASOS GRATIS) Y DISPARADORES DE ANEXOS ---
 BLOQUEO_PASO_1_FRASES = (
     "precio", "cuanto", "cuesta", "costo", "valor", "presencial", "donde",
@@ -140,7 +151,8 @@ DISPARADORES_PAGOS = (
     "yap", "plin", "tarjet", "debit", "credit", "cuota", "pagoefectivo", "pago efectivo",
     "efectivo", "banco", "interbank", "bbva", "bcp", "scotiabank", "banbif",
     "caja", "tambo", "kasnet", "agente", "paypal", "pagar", "pago", "pagos", "medio",
-    "metodo", "cupon", "109", "189", "aromaterapia", "aprob", "codigo", "confirmar",
+    "metodo", "cupon", "109", "189", "aromaterapia", "arcilla", "polimeric", "casilla",
+    "marcar", "captura", "pantallazo", "aprob", "codigo", "confirmar",
     "solicitar", "boton", "error", "rechaz", "fallo", "falla", "no puedo", "no me deja",
     "trabo", "trabado", "limite", "saldo", "checkout", "formulario", "celular",
     "matricul", "inscrib", "link", "enlace", "comprar", "deposito", "transfer",
@@ -293,6 +305,65 @@ def normalizar_etiquetas_multimedia(texto):
         r'\s*(?:\]|\))'
     )
     return re.sub(patron_respaldo, _reemplazar_marca, texto, flags=re.IGNORECASE)
+
+
+def limpiar_formato_whatsapp(texto):
+    """Corrige automáticamente **negritas** a *negritas* y mueve emojis antes de '?' hacia después del '?'."""
+    if not texto:
+        return ""
+    texto = re.sub(r'\*\*([^*\n]+?)\*\*', r'*\1*', texto)
+    texto = re.sub(
+        r'\s*([✨🔥🎁💳🛡️😊📋🎓📲🏦👇👋📄🎥🛍️📩💻])\s*\?',
+        r'? \1',
+        texto,
+    )
+    return texto
+
+
+def obtener_nota_rotacion_caso_d(numero_remitente, memoria, media_recibida=None):
+    """
+    Si el cliente ya vio temario + precio de S/ 110.00 (Paso 4) y aún NO recibió el link ni pagó,
+    devuelve una instrucción corta con la escasez exacta del turno para evitar cierres repetidos.
+    """
+    if not memoria or media_recibida:
+        return ""
+
+    with semaforo:
+        est = estado_remarketing.get(numero_remitente, {})
+        if est.get("link_enviado") or est.get("pago_confirmado"):
+            return ""
+
+    historial_low = "\n".join(memoria).lower()
+    if "go.hotmart.com" in historial_low:
+        return ""
+
+    # Confirmar que ya pasó por temario y Paso 4 (precio + bonos/plataforma)
+    if "temario.pdf" not in historial_low:
+        return ""
+    if not ("110.00" in historial_low and ("bonos.pdf" in historial_low or "video-plataforma.mp4" in historial_low)):
+        return ""
+
+    # Contar cuántas respuestas de Carla hubo DESPUÉS del mensaje del Paso 4
+    idx_paso_4 = -1
+    for i, item in enumerate(memoria):
+        low = item.lower()
+        if item.startswith("Tú:") and "110.00" in low and ("bonos.pdf" in low or "video-plataforma.mp4" in low):
+            idx_paso_4 = i
+            break
+
+    if idx_paso_4 == -1:
+        return ""
+
+    turnos_post_precio = sum(1 for item in memoria[idx_paso_4 + 1:] if item.startswith("Tú:"))
+    verbo, palanca, emoji = ROTACION_CASO_D[turnos_post_precio % len(ROTACION_CASO_D)]
+
+    return (
+        "[INSTRUCCIÓN INTERNA DE CIERRE — CASO D: "
+        "Si el cliente NO está pidiendo el enlace ahora (Paso 5) ni diciendo 'lo voy a pensar', "
+        f"cierra en el último párrafo aparte con UNA pregunta cerrada corta que empiece con '{verbo}', "
+        f"enfoque SOLO esta escasez: {palanca}, y termine con '? {emoji}'. "
+        "Prohibido copiar cierres de mensajes anteriores.]"
+    )
 
 
 def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
@@ -712,6 +783,7 @@ def ejecutar_remarketing(numero_remitente):
 
         # Limpieza defensiva: el remarketing de 2 horas es siempre solo texto
         texto_rmk = re.sub(r'\[(VIDEO|IMAGE|DOCUMENT|AUDIO):[^\]]+\]', '', texto_rmk, flags=re.IGNORECASE).strip()
+        texto_rmk = limpiar_formato_whatsapp(texto_rmk)
         if not texto_rmk:
             return
 
@@ -1036,8 +1108,10 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
                     nota_vision = (
                         "[INSTRUCCIÓN DE VISIÓN: El prospecto adjuntó una imagen o documento PDF. "
                         "Obsérvalo con atención (puede ser un comprobante de Yape/Tarjeta, un voucher CIP pendiente o pagado de PagoEfectivo, "
-                        "una captura del correo de Hotmart o un error en pantalla) y responde exactamente según lo que ves y tus reglas.]"
+                        "una captura del checkout, del correo de Hotmart o un error en pantalla) y responde exactamente según lo que ves y tus reglas.]"
                     )
+
+            nota_caso_d = obtener_nota_rotacion_caso_d(numero_remitente, memoria, media_recibida)
 
             secciones_usuario = []
             if bloque_anexos:
@@ -1046,6 +1120,8 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
                 secciones_usuario.append(texto_historial)
             if nota_vision:
                 secciones_usuario.append(nota_vision)
+            if nota_caso_d:
+                secciones_usuario.append(nota_caso_d)
             secciones_usuario.append(f"Mensaje actual del prospecto: '{texto_recibido}'")
             prompt_usuario = "\n\n".join(secciones_usuario)
 
@@ -1066,7 +1142,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
                 texto_generado = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
 
                 if texto_generado:
-                    respuesta_final = normalizar_etiquetas_multimedia(texto_generado)
+                    respuesta_final = limpiar_formato_whatsapp(normalizar_etiquetas_multimedia(texto_generado))
                     gemini_ok = True
                     # Salvavidas de video de bienvenida: si Gemini olvidó la etiqueta [VIDEO:...], la inyecta
                     if "video de arriba" in respuesta_final.lower() and "[VIDEO:" not in respuesta_final.upper():
