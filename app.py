@@ -355,13 +355,19 @@ def limpiar_formato_whatsapp(texto, cierre_respaldo=""):
 def obtener_nota_rotacion_caso_d(numero_remitente, memoria, media_recibida=None, texto_recibido=""):
     """
     Si el cliente ya vio temario + precio de S/ 110.00 (Paso 3) y aún NO recibió el link ni pagó,
-    devuelve (nota_sistema, cierre_respaldo) con la escasez exacta del turno para evitar cierres repetidos.
-    Se omite ante salidas corteses o cuando dice que lo va a pensar para no presionar.
+    devuelve (nota_caso_d, cierre_respaldo) con la escasez exacta del turno para evitar cierres repetidos.
+    Se apaga automáticamente ante confirmaciones afirmativas (para permitir el Paso 4 sin trabas)
+    y ante salidas corteses o "lo voy a pensar".
     """
     if not memoria or media_recibida:
         return "", ""
 
-    texto_norm = normalizar_texto(texto_recibido)
+    texto_raw = (texto_recibido or "").strip()
+    texto_norm = normalizar_texto(texto_raw)
+    palabras = re.findall(r"[a-z0-9]+", texto_norm)
+    set_palabras = set(palabras)
+
+    # 1. Apagar ante salidas corteses o "lo voy a pensar"
     salidas_corteses = (
         "gracias por la info", "muchas gracias", "ok gracias", "okey gracias",
         "entendido gracias", "lo voy a pensar", "lo pensare", "lo reviso",
@@ -370,6 +376,28 @@ def obtener_nota_rotacion_caso_d(numero_remitente, memoria, media_recibida=None,
     )
     if any(s in texto_norm for s in salidas_corteses) or texto_norm in ("gracias", "ok, gracias", "vale, gracias", "vale gracias"):
         return "", ""
+
+    # 2. Apagar ante confirmaciones afirmativas o pedido de link/pago (deja libre el Paso 4)
+    es_pregunta = ("?" in texto_raw) or ("¿" in texto_raw) or any(
+        p in texto_norm for p in ("se puede", "puedo", "aceptan", "tienen", "como ", "cuanto", "cuando", "donde", "cual", "necesito", "incluye", "dura")
+    )
+    if not es_pregunta and palabras:
+        ultima_carla = ""
+        for item in reversed(memoria):
+            if item.startswith("Tú:"):
+                ultima_carla = normalizar_texto(item)
+                break
+        carla_pregunto_freno = any(k in ultima_carla for k in ("te frena", "te genero duda", "alguna duda puntual que todavia"))
+        pide_link_o_pago = any(
+            k in texto_norm for k in ("link", "enlace", "quiero pagar", "quiero inscrib", "quiero matricular", "con yape", "con tarjeta", "con pagoefectivo")
+        )
+        es_confirmacion_corta = (
+            len(palabras) <= 6
+            and bool(set_palabras & PALABRAS_AFIRMATIVAS)
+            and not (set_palabras & {"no", "pero", "aunque", "duda", "consulta", "pregunta"})
+        )
+        if pide_link_o_pago or (es_confirmacion_corta and not carla_pregunto_freno):
+            return "", ""
 
     with semaforo:
         est = estado_remarketing.get(numero_remitente, {})
@@ -401,15 +429,15 @@ def obtener_nota_rotacion_caso_d(numero_remitente, memoria, media_recibida=None,
     verbo, palanca, emoji = ROTACION_CASO_D[turnos_post_precio % len(ROTACION_CASO_D)]
     cierre_respaldo = f"{verbo.rstrip('.')} {palanca}? {emoji}"
 
-    nota_sistema = (
+    nota_caso_d = (
         "GUÍA INTERNA DE CIERRE PARA ESTE TURNO (NO IMPRIMIR NI CITAR ESTA GUÍA): "
-        "Si el cliente NO está pidiendo el enlace ahora (Paso 4), NO está diciendo 'lo voy a pensar' "
-        "ni despidiéndose con cortesía ('ok, muchas gracias', 'lo reviso'), "
+        "Si el cliente NO está pidiendo el enlace ni confirmando que quiere avanzar (Paso 4), "
+        "NO está diciendo 'lo voy a pensar' ni despidiéndose con cortesía, "
         f"termina tu respuesta en un último párrafo aparte con UNA sola pregunta cerrada corta que empiece con '{verbo}', "
         f"enfoque SOLO esta palanca: {palanca}, y termine con '? {emoji}'. "
         "Nunca copies texto de estas instrucciones ni cierres de mensajes anteriores."
     )
-    return nota_sistema, cierre_respaldo
+    return nota_caso_d, cierre_respaldo
 
 
 def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
@@ -785,7 +813,7 @@ def ejecutar_remarketing(numero_remitente):
 
         if modo == "POST_PRECIO":
             orden_interna = (
-                "GUÍA INTERNA DE SEGUIMIENTO (NO IMPRIMIR NI MENCIONAR AL CLIENTE): "
+                "\n\nGUÍA INTERNA DE SEGUIMIENTO (NO IMPRIMIR NI MENCIONAR AL CLIENTE): "
                 "Han pasado 2 horas desde tu último mensaje y el prospecto no ha respondido. "
                 "Ya vio el precio promocional de S/ 110.00, pero todavía no pidió el enlace oficial. "
                 "Redacta UN solo mensaje de seguimiento por WhatsApp (SOLO TEXTO, sin etiquetas [VIDEO]/[DOCUMENT]/[IMAGE] y SIN pegar el enlace todavía) "
@@ -797,7 +825,7 @@ def ejecutar_remarketing(numero_remitente):
             )
         else:
             orden_interna = (
-                "GUÍA INTERNA DE SEGUIMIENTO (NO IMPRIMIR NI MENCIONAR AL CLIENTE): "
+                "\n\nGUÍA INTERNA DE SEGUIMIENTO (NO IMPRIMIR NI MENCIONAR AL CLIENTE): "
                 "Han pasado 2 horas desde tu último mensaje y el prospecto no ha respondido. "
                 "Ya recibió el enlace oficial de Hotmart, pero todavía no ha confirmado su pago. "
                 "Redacta UN solo mensaje de seguimiento por WhatsApp (SOLO TEXTO, sin etiquetas [VIDEO]/[DOCUMENT]/[IMAGE] y SIN volver a pegar la URL del enlace) "
@@ -808,9 +836,8 @@ def ejecutar_remarketing(numero_remitente):
                 "y cierra en el último párrafo SOLO ofreciéndole ayuda inmediata si se trabó en algún paso (como con *Yape*, *Tarjeta* o *PagoEfectivo*)."
             )
 
-        instruccion_rmk = f"{instruccion_base}\n\n{orden_interna}"
-        prompt_rmk = texto_historial if texto_historial else "El prospecto no respondió en 2 horas. Redacta el seguimiento."
-        res = llamar_gemini_api(instruccion_rmk, prompt_rmk, temperatura=0.25)
+        prompt_rmk = f"{texto_historial}{orden_interna}".strip()
+        res = llamar_gemini_api(instruccion_base, prompt_rmk, temperatura=0.25)
 
         if res is None or res.status_code != 200:
             return
@@ -1138,7 +1165,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
         enviar_respuesta_carla(numero_remitente, respuesta_gratis, activar_remarketing=True)
         return
 
-    # --- 2. CEREBRO GEMINI 3.5 FLASH-LITE (NÚCLEO EN systemInstruction + ANEXOS BAJO DEMANDA) ---
+    # --- 2. CEREBRO GEMINI 3.5 FLASH-LITE (NÚCLEO ESTÁTICO EN systemInstruction + ANEXOS BAJO DEMANDA) ---
     respuesta_final = "Lo siento, tengo un problema técnico temporal."
     gemini_ok = False
 
@@ -1181,24 +1208,20 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
                 numero_remitente, memoria, media_recibida, texto_recibido
             )
 
-            # Directivas internas van en systemInstruction (nunca mezcladas con el texto del prospecto)
-            bloques_sistema = [instruccion_base]
-            if nota_vision:
-                bloques_sistema.append(nota_vision)
-            if nota_caso_d:
-                bloques_sistema.append(nota_caso_d)
-            instruccion_sistema_turno = "\n\n".join(bloques_sistema)
-
             secciones_usuario = []
             if bloque_anexos:
                 secciones_usuario.append(bloque_anexos)
             if texto_historial:
                 secciones_usuario.append(texto_historial)
+            if nota_vision:
+                secciones_usuario.append(nota_vision)
+            if nota_caso_d:
+                secciones_usuario.append(nota_caso_d)
             secciones_usuario.append(f"Mensaje actual del prospecto: '{texto_recibido}'")
             prompt_usuario = "\n\n".join(secciones_usuario)
 
             res = llamar_gemini_api(
-                instruccion_sistema_turno,
+                instruccion_base,
                 prompt_usuario,
                 partes_adjuntas=partes_adjuntas,
                 temperatura=0.4,
