@@ -78,11 +78,11 @@ TEXTO_PASO_3 = (
     "(cursos extra en video HD, recetarios, lista de proveedores y plantillas en Excel). Arriba tienes el catálogo completo 🎁.\n\n"
     f"[VIDEO:{URL_PLATAFORMA}]\n"
     "🎥 Y para que veas lo práctico que es aprender a tu ritmo desde casa, arriba te muestro nuestra *plataforma por dentro* en *video HD* ✨.\n\n"
-    "El valor normal de los *3 programas completos* es de ~S/ 220.00~, pero hoy con el *50% de descuento* accedes de por vida a la *promoción 3x1* por un *único pago de S/ 110.00*. "
-    "Piensa en esto como una inversión para ti: vendiendo tus primeros *4 sets* creados con tu propia marca ya podrías recuperarla 🔥.\n\n"
-    "Y para tu total seguridad y tranquilidad, tu pago se realiza directo en la plataforma oficial de *Hotmart* con *Yape*, *Tarjeta* o *PagoEfectivo*, "
-    "respaldado por *7 días de garantía*: entras, revisas las clases por dentro sin miedo a perder tu dinero y, si no cumple tus expectativas, te devuelven el *100%* 🛡️.\n\n"
-    "Hoy solo me quedan *3 cupos* con este *50% de descuento*, ¿te gustaría asegurar el tuyo con tu *enlace oficial* o tienes alguna duda puntual que pueda resolver ahora? 📲"
+    "El valor normal de los *3 programas completos* es ~S/ 220.00~, pero hoy con el *50% de descuento* accedes de por vida al *3x1* "
+    "por un *único pago de S/ 110.00* —una inversión que podrías recuperar vendiendo tus primeros *4 sets* 🔥.\n\n"
+    "Y para tu total seguridad, pagas directo en *Hotmart* con *Yape*, *Tarjeta* o *PagoEfectivo*, con *7 días de garantía*: "
+    "revisas las clases por dentro y, si no cumple tus expectativas, te devuelven el *100%* 🛡️.\n\n"
+    "Hoy solo me quedan *3 cupos* con este descuento, ¿te envío tu *enlace oficial* para asegurar el tuyo o tienes alguna duda? 📲"
 )
 
 # --- ROTACIÓN AUTOMÁTICA DE ESCASEZ PARA CASO D (POST-PRECIO / PRE-LINK) ---
