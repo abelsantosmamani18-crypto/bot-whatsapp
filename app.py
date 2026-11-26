@@ -41,7 +41,7 @@ MAPA_SEPARADORES = {
     "ANEXO_POSTPAGO": "postpago",
 }
 
-# --- URLs MULTIMEDIA Y TEXTOS FIJOS DEL EMBUDO (PASOS 1 AL 4 GRATIS) ---
+# --- URLs MULTIMEDIA Y TEXTOS FIJOS DEL EMBUDO (PASOS 1 AL 3 GRATIS) ---
 URL_VIDEO_GANCHO = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/video-gancho.mp4"
 URL_TEMARIO = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/temario.pdf"
 URL_CERTIFICADO = "https://cdn.jsdelivr.net/gh/abelsantosmamani18-crypto/bot-whatsapp@main/static/velas_y_jabones/certificado.png"
@@ -63,38 +63,36 @@ TEXTO_PASO_1 = (
 )
 
 TEXTO_PASO_2 = (
-    "¡Me alegra muchísimo! Aquí aprenderás *paso a paso desde cero*, con las medidas y temperaturas exactas "
-    "para no desperdiciar materiales, hasta crear diseños profesionales y venderlos bajo tu propia marca ✨.\n\n"
-    "¿Te gustaría que te envíe el *temario oficial* para que revises todos los módulos al detalle? 📋"
+    "¡Qué alegría leer eso! Aquí no vas a adivinar ni desperdiciar materiales: aprenderás *paso a paso desde cero*, "
+    "con las medidas y temperaturas exactas para lograr acabados profesionales y vender bajo tu propia marca ✨.\n\n"
+    f"[DOCUMENT:{URL_TEMARIO}]\n"
+    "👆📄 Para que veas exactamente todo lo que vas a dominar, arriba tienes el *temario oficial en PDF* con los módulos de los 3 programas (*Velas, Jabones y creación de tu Marca*) 📋.\n\n"
+    f"[IMAGE:{URL_CERTIFICADO}]\n"
+    "🎓 Y para respaldar tu emprendimiento frente a tus clientes, al finalizar recibirás este *Certificado Internacional* con tu nombre 💫.\n\n"
+    "¿Tienes alguna consulta sobre los módulos o te muestro ahora el *precio promocional* junto con los *18 bonos* y la plataforma por dentro? 🎁"
 )
 
 TEXTO_PASO_3 = (
-    f"[DOCUMENT:{URL_TEMARIO}]\n"
-    "👆📄 Arriba tienes el *temario oficial en PDF* con todos los módulos de los 3 programas (*Velas, Jabones y creación de tu Marca*) 📋.\n\n"
-    f"[IMAGE:{URL_CERTIFICADO}]\n"
-    "🎓 Y aquí ves el *Certificado Internacional* que recibirás con tu nombre al finalizar para respaldar tu negocio ✨.\n\n"
-    "¿Tienes alguna consulta sobre los módulos o te paso el *precio promocional* junto con los *18 bonos* y la plataforma por dentro? 🎁"
-)
-
-TEXTO_PASO_4 = (
-    "El valor normal de los *3 programas completos* (*Velas, Jabones y creación de tu Marca*) es de ~S/ 220.00~, "
-    "pero hoy con el *50% de descuento* te llevas la *promoción 3x1* con acceso de por vida por un *único pago de S/ 110.00* 🔥.\n\n"
     f"[DOCUMENT:{URL_BONOS}]\n"
-    "👆📄 Además, hoy desbloqueas gratis en tu plataforma *18 bonos exclusivos* (cursos extra en video HD, recetarios, proveedores y plantillas en Excel). "
-    "Arriba tienes el catálogo completo 🎁.\n\n"
+    "👆📄 Para que tu marca destaque desde el primer día, hoy desbloqueas gratis en tu plataforma *18 bonos exclusivos* "
+    "(cursos extra en video HD, recetarios, lista de proveedores y plantillas en Excel). Arriba tienes el catálogo completo 🎁.\n\n"
     f"[VIDEO:{URL_PLATAFORMA}]\n"
-    "🎥 Aquí arriba ves nuestra *plataforma por dentro* para aprender desde cero en *video HD* a tu ritmo, sin desperdiciar materiales ✨.\n\n"
-    "Hoy solo me quedan *3 cupos* con el *50% de descuento* del *3x1*, ¿tienes alguna consulta o te envío el *enlace oficial* para asegurar el tuyo? 🔥"
+    "🎥 Y para que veas lo práctico que es aprender a tu ritmo desde casa, arriba te muestro nuestra *plataforma por dentro* en *video HD* ✨.\n\n"
+    "El valor normal de los *3 programas completos* es de ~S/ 220.00~, pero hoy con el *50% de descuento* accedes de por vida a la *promoción 3x1* por un *único pago de S/ 110.00*. "
+    "Piensa en esto como una inversión para ti: vendiendo tus primeros *4 sets* creados con tu propia marca ya podrías recuperarla 🔥.\n\n"
+    "Y para tu total seguridad y tranquilidad, tu pago se realiza directo en la plataforma oficial de *Hotmart* con *Yape*, *Tarjeta* o *PagoEfectivo*, "
+    "respaldado por *7 días de garantía*: entras, revisas las clases por dentro sin miedo a perder tu dinero y, si no cumple tus expectativas, te devuelven el *100%* 🛡️.\n\n"
+    "Hoy solo me quedan *3 cupos* con este *50% de descuento*, ¿te gustaría asegurar el tuyo con tu *enlace oficial* o tienes alguna duda puntual que pueda resolver ahora? 📲"
 )
 
 # --- ROTACIÓN AUTOMÁTICA DE ESCASEZ PARA CASO D (POST-PRECIO / PRE-LINK) ---
 ROTACION_CASO_D = (
     ("¿Aprovechamos...", "el precio promocional de *S/ 110.00* (único pago de por vida) antes de que vuelva a ~S/ 220.00~", "🔥"),
     ("¿Aseguras...", "el *50% de descuento* activo hoy por tiempo limitado para recibir tu *enlace oficial*", "✨"),
-    ("¿Arrancamos...", "hoy mismo con la oferta *3x1* (*3 programas completos* por el precio de 1)", "🎓"),
+    ("¿Empezamos...", "hoy mismo con la oferta *3x1* (*3 programas completos* por el precio de 1)", "🎓"),
     ("¿Desbloqueamos...", "hoy gratis tus *18 bonos exclusivos* junto con tu acceso de por vida", "🎁"),
     ("¿Te animas a separar...", "tu lugar hoy sin riesgo respaldada por los *7 días de garantía* en Hotmart", "🛡️"),
-    ("¿Separamos...", "tu ingreso hoy para arrancar acompañada desde casa en la *Comunidad VIP*", "📲"),
+    ("¿Separamos...", "tu ingreso hoy para empezar acompañada desde casa en la *Comunidad VIP*", "📲"),
     ("¿Quieres asegurar...", "uno de los últimos *3 cupos de hoy* antes de que cierre la promoción", "📩"),
 )
 
@@ -131,7 +129,10 @@ PALABRAS_BLOQUEO_CONFIRMACION = {
     "pregunta", "preguntas", "yape", "plin", "tarjeta", "pago", "pagar", "caro",
     "dinero", "plata", "pensar", "luego", "despues", "material", "materiales",
     "horario", "horarios", "tiempo", "garantia", "link", "enlace", "gratis", "ya",
-    "pague", "compre", "correo", "hotmart", "solo", "error", "ayuda", "voucher",
+    "pague", "compre", "correo", "hotmart", "solo", "solamente", "unicamente",
+    "jabon", "jabones", "vela", "velas", "requiero", "momento", "necesito", "busco",
+    "gracias", "agradezco", "entendido", "reviso", "revisare", "aviso", "avisare",
+    "error", "ayuda", "voucher",
 }
 
 DISPARADORES_TEMARIO = (
@@ -174,7 +175,7 @@ DISPARADORES_POSTPAGO = (
 
 DISPARADORES_POSTPAGO_PALABRAS = {"cip", "app", "hp"}
 
-# --- CONFIGURACIÓN DE REMARKETING INTELIGENTE (2 HORAS PAREJAS) ---
+# --- CONFIGURACIÓN DE REMARKETING INTELIGENTE (2 HORAS PAREJAS: SOLO POST-PRECIO Y POST-LINK) ---
 REMARKETING_MINUTOS = float(os.environ.get("REMARKETING_MINUTOS", "120"))
 REMARKETING_HORA_INICIO = (8, 30)   # 8:30 a.m. hora Lima
 REMARKETING_HORA_FIN = (22, 0)      # 10:00 p.m. hora Lima
@@ -313,19 +314,30 @@ def limpiar_formato_whatsapp(texto):
         return ""
     texto = re.sub(r'\*\*([^*\n]+?)\*\*', r'*\1*', texto)
     texto = re.sub(
-        r'\s*([✨🔥🎁💳🛡️😊📋🎓📲🏦👇👋📄🎥🛍️📩💻])\s*\?',
+        r'\s*([✨🔥🎁💳🛡️😊📋🎓📲🏦👇👋📄🎥🛍️📩💻💫])\s*\?',
         r'? \1',
         texto,
     )
     return texto
 
 
-def obtener_nota_rotacion_caso_d(numero_remitente, memoria, media_recibida=None):
+def obtener_nota_rotacion_caso_d(numero_remitente, memoria, media_recibida=None, texto_recibido=""):
     """
-    Si el cliente ya vio temario + precio de S/ 110.00 (Paso 4) y aún NO recibió el link ni pagó,
+    Si el cliente ya vio temario + precio de S/ 110.00 (Paso 3) y aún NO recibió el link ni pagó,
     devuelve una instrucción corta con la escasez exacta del turno para evitar cierres repetidos.
+    Se omite ante salidas corteses o cuando dice que lo va a pensar para no presionar.
     """
     if not memoria or media_recibida:
+        return ""
+
+    texto_norm = normalizar_texto(texto_recibido)
+    salidas_corteses = (
+        "gracias por la info", "muchas gracias", "ok gracias", "okey gracias",
+        "entendido gracias", "lo voy a pensar", "lo pensare", "lo reviso",
+        "lo voy a revisar", "te aviso", "luego te escribo", "despues te escribo",
+        "mas adelante", "por ahora no", "no gracias",
+    )
+    if any(s in texto_norm for s in salidas_corteses) or texto_norm in ("gracias", "ok, gracias", "vale, gracias", "vale gracias"):
         return ""
 
     with semaforo:
@@ -337,29 +349,30 @@ def obtener_nota_rotacion_caso_d(numero_remitente, memoria, media_recibida=None)
     if "go.hotmart.com" in historial_low:
         return ""
 
-    # Confirmar que ya pasó por temario y Paso 4 (precio + bonos/plataforma)
+    # Confirmar que ya pasó por temario y Paso 3 (precio + bonos/plataforma)
     if "temario.pdf" not in historial_low:
         return ""
     if not ("110.00" in historial_low and ("bonos.pdf" in historial_low or "video-plataforma.mp4" in historial_low)):
         return ""
 
-    # Contar cuántas respuestas de Carla hubo DESPUÉS del mensaje del Paso 4
-    idx_paso_4 = -1
+    # Contar cuántas respuestas de Carla hubo DESPUÉS del mensaje del Paso 3 (precio)
+    idx_paso_precio = -1
     for i, item in enumerate(memoria):
         low = item.lower()
         if item.startswith("Tú:") and "110.00" in low and ("bonos.pdf" in low or "video-plataforma.mp4" in low):
-            idx_paso_4 = i
+            idx_paso_precio = i
             break
 
-    if idx_paso_4 == -1:
+    if idx_paso_precio == -1:
         return ""
 
-    turnos_post_precio = sum(1 for item in memoria[idx_paso_4 + 1:] if item.startswith("Tú:"))
+    turnos_post_precio = sum(1 for item in memoria[idx_paso_precio + 1:] if item.startswith("Tú:"))
     verbo, palanca, emoji = ROTACION_CASO_D[turnos_post_precio % len(ROTACION_CASO_D)]
 
     return (
         "[INSTRUCCIÓN INTERNA DE CIERRE — CASO D: "
-        "Si el cliente NO está pidiendo el enlace ahora (Paso 5) ni diciendo 'lo voy a pensar', "
+        "Si el cliente NO está pidiendo el enlace ahora (Paso 4), NO está diciendo 'lo voy a pensar' "
+        "ni despidiéndose con cortesía ('ok, muchas gracias', 'lo reviso'), "
         f"cierra en el último párrafo aparte con UNA pregunta cerrada corta que empiece con '{verbo}', "
         f"enfoque SOLO esta escasez: {palanca}, y termine con '? {emoji}'. "
         "Prohibido copiar cierres de mensajes anteriores.]"
@@ -369,7 +382,7 @@ def obtener_nota_rotacion_caso_d(numero_remitente, memoria, media_recibida=None)
 def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
     """
     Devuelve (numero_paso, respuesta_fija) SOLO cuando es 100% seguro responder sin IA.
-    Ante cualquier pregunta, duda, objeción o adjunto devuelve (None, None) para pasar a Gemini.
+    Ante cualquier pregunta, duda, objeción, interés parcial o adjunto devuelve (None, None) para pasar a Gemini.
     """
     if media_recibida:
         return None, None
@@ -395,7 +408,7 @@ def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
             return 1, TEXTO_PASO_1
         return None, None
 
-    # --- PASOS 2, 3 Y 4 GRATIS: Solo confirmaciones cortas y limpias al paso inmediato anterior ---
+    # --- PASOS 2 Y 3 GRATIS: Solo confirmaciones cortas y limpias al paso inmediato anterior ---
     if len(palabras) > 7:
         return None, None
 
@@ -414,26 +427,22 @@ def detectar_paso_gratis(texto_recibido, media_recibida, memoria):
     historial_unido = normalizar_texto("\n".join(memoria))
     es_afirmativa = bool(set_palabras & PALABRAS_AFIRMATIVAS)
 
-    # Paso 1 -> Paso 2
+    # Paso 1 -> Paso 2 (Puente + Temario + Certificado)
     if "crear tu propia marca" in ultima_carla and "negocio rentable" in ultima_carla:
-        if es_afirmativa and not (set_palabras & {"precio", "costo", "valor", "bonos", "bono", "plataforma", "certificado", "diploma", "temario"}):
+        if "temario.pdf" in historial_unido or "certificado.png" in historial_unido:
+            return None, None
+        if (es_afirmativa or "temario" in set_palabras) and not (
+            set_palabras & {"precio", "costo", "valor", "bonos", "bono", "plataforma"}
+        ):
             return 2, TEXTO_PASO_2
         return None, None
 
-    # Paso 2 -> Paso 3
-    if "temario oficial" in ultima_carla and "modulos al detalle" in ultima_carla:
-        if "temario.pdf" in historial_unido or "certificado.png" in historial_unido:
-            return None, None
-        if (es_afirmativa or "temario" in set_palabras) and not (set_palabras & {"precio", "costo", "valor", "bonos", "bono", "plataforma"}):
-            return 3, TEXTO_PASO_3
-        return None, None
-
-    # Paso 3 -> Paso 4
+    # Paso 2 -> Paso 3 (Bonos + Plataforma + Precio y Seguridad)
     if "precio promocional" in ultima_carla and "18 bonos" in ultima_carla and "plataforma por dentro" in ultima_carla:
         if "bonos.pdf" in historial_unido or "video-plataforma.mp4" in historial_unido:
             return None, None
-        if es_afirmativa or bool(set_palabras & {"precio", "oferta", "bonos", "promocion"}):
-            return 4, TEXTO_PASO_4
+        if es_afirmativa or bool(set_palabras & {"precio", "costo", "valor", "oferta", "bonos", "promocion"}):
+            return 3, TEXTO_PASO_3
         return None, None
 
     return None, None
@@ -507,7 +516,8 @@ def _obtener_estado_rmk_locked(telefono):
             "precio_enviado": False,
             "link_enviado": False,
             "pago_confirmado": False,
-            "enviado": False,
+            "enviado_post_precio": False,
+            "enviado_post_link": False,
             "ultima_interaccion_cliente": time.time(),
         }
     return estado_remarketing[telefono]
@@ -556,7 +566,7 @@ def registrar_actividad_cliente_rmk(telefono, texto_cliente=""):
 
 
 def actualizar_y_programar_remarketing(telefono, respuesta_carla):
-    """Actualiza la etapa comercial según la respuesta de Carla y programa el toque único de 2 horas."""
+    """Actualiza la etapa comercial según la respuesta de Carla y programa 1 toque de 2 horas por etapa (Precio o Link)."""
     resp_low = (respuesta_carla or "").lower()
 
     senales_precio = ("s/ 110", "110.00", "bonos.pdf", "go.hotmart.com")
@@ -575,8 +585,6 @@ def actualizar_y_programar_remarketing(telefono, respuesta_carla):
         "celebremos",
     )
 
-    segundos_espera = None
-
     with semaforo:
         est = _obtener_estado_rmk_locked(telefono)
 
@@ -590,8 +598,11 @@ def actualizar_y_programar_remarketing(telefono, respuesta_carla):
         cli = clientes_panel.get(telefono)
         pausado = bool(cli and cli.get("estado_bot") == "PAUSADO")
 
-        # Si ya pagó, ya se envió remarketing antes, está pausado o aún no vio el precio -> no programar
-        if pausado or est["pago_confirmado"] or est["enviado"] or not (est["precio_enviado"] or est["link_enviado"]):
+        modo = "POST_LINK" if est["link_enviado"] else "POST_PRECIO"
+        ya_enviado_etapa = est["enviado_post_link"] if modo == "POST_LINK" else est["enviado_post_precio"]
+
+        # Solo programa si vio precio o link, no pagó, no está pausado y aún no recibió seguimiento en ESTA etapa
+        if pausado or est["pago_confirmado"] or ya_enviado_etapa or not (est["precio_enviado"] or est["link_enviado"]):
             _cancelar_timer_remarketing_locked(telefono)
             return
 
@@ -637,7 +648,6 @@ def actualizar_y_programar_remarketing(telefono, respuesta_carla):
         timers_remarketing[telefono] = nuevo_timer
         nuevo_timer.start()
 
-        modo = "POST_LINK" if est["link_enviado"] else "POST_PRECIO"
         log(f"[REMARKETING PROGRAMADO] {telefono} ({modo}) para {objetivo.strftime('%d/%m %H:%M')} ({int(segundos_espera)}s)")
 
 
@@ -660,7 +670,6 @@ def llamar_gemini_api(instruccion_sistema, prompt_usuario, partes_adjuntas=None,
             if res.status_code == 200:
                 return res
             log(f"[GEMINI ERROR] Intento {intento + 1} HTTP {res.status_code}: {res.text[:250]}")
-            # Respaldo defensivo si un endpoint rechazara systemInstruction
             if res.status_code == 400 and "system" in res.text.lower() and intento == 0:
                 log("[GEMINI] Reintentando con prompt combinado por compatibilidad de systemInstruction.")
                 payload = {
@@ -678,7 +687,6 @@ def llamar_gemini_api(instruccion_sistema, prompt_usuario, partes_adjuntas=None,
                 time.sleep(2.0)
                 continue
 
-    # Respaldo automático: si falla con adjunto, reintenta solo con texto para no colgar el chat
     if (res is None or res.status_code != 200) and partes_adjuntas:
         log("[GEMINI] Reintentando solo con texto tras fallo con adjunto.")
         payload_fallback = {
@@ -717,9 +725,14 @@ def ejecutar_remarketing(numero_remitente):
                 return
 
             est = estado_remarketing.get(numero_remitente)
-            if not est or est.get("pago_confirmado") or est.get("enviado"):
+            if not est or est.get("pago_confirmado"):
                 return
             if not (est.get("precio_enviado") or est.get("link_enviado")):
+                return
+
+            modo = "POST_LINK" if est.get("link_enviado") else "POST_PRECIO"
+            ya_enviado_etapa = est.get("enviado_post_link") if modo == "POST_LINK" else est.get("enviado_post_precio")
+            if ya_enviado_etapa:
                 return
 
             ultimo_ts_al_iniciar = est.get("ultima_interaccion_cliente", 0)
@@ -727,7 +740,6 @@ def ejecutar_remarketing(numero_remitente):
                 log(f"[REMARKETING CANCELADO] Ventana 24h vencida para {numero_remitente}")
                 return
 
-            modo = "POST_LINK" if est.get("link_enviado") else "POST_PRECIO"
             memoria = list(historial_conversaciones.get(numero_remitente, []))
 
         if not GEMINI_API_KEY:
@@ -744,11 +756,11 @@ def ejecutar_remarketing(numero_remitente):
                 "Han pasado 2 horas desde tu último mensaje y el prospecto no ha respondido. "
                 "Ya vio el precio promocional de S/ 110.00, pero todavía no pidió el enlace oficial. "
                 "Redacta UN solo mensaje de seguimiento por WhatsApp (SOLO TEXTO, sin etiquetas [VIDEO]/[DOCUMENT]/[IMAGE] y SIN pegar el enlace todavía) "
-                "sonando 100% humana, cercana, natural y breve (máximo 3 párrafos cortos). "
-                "Ten en cuenta lo último que conversaron para no repetir frases mecánicas, y apóyate con naturalidad en estos dos alivios reales: "
-                "1) Que no necesita comprar máquinas caras porque empieza con utensilios que ya tiene en casa, y vendiendo sus primeros *4 sets* ya podría recuperar los *S/ 110* que invirtió en el curso. "
-                "2) Que no compra a ciegas: *Hotmart* la respalda con *7 días de garantía* para entrar, revisar las clases por dentro y si ve que no es para ella, le devuelven el *100% de su dinero*. "
-                "Deja el último párrafo SOLO para una pregunta breve y empática invitándola a contarte con confianza si hay alguna duda puntual que todavía la frena.]"
+                "sonando 100% humana, cercana, natural y breve (máximo 2 a 3 párrafos cortos). "
+                "Ten en cuenta lo último que conversaron para NO repetir exactamente las mismas frases del mensaje de precio, y apóyate con naturalidad en estos dos alivios complementarios: "
+                "1) Que no necesita gastar en máquinas caras ni talleres costosos porque puede empezar con implementos sencillos que ya tiene en cocina y avanzar a su ritmo desde casa, acompañada por *6 meses en nuestra Comunidad VIP*. "
+                "2) Que recuerda que sigue respaldada por los *7 días de garantía* en *Hotmart* si desea probar las clases por dentro sin riesgo. "
+                "Deja el último párrafo SOLO para una pregunta breve y empática invitándola a contarte con confianza si hay alguna duda puntual sobre los materiales, las clases o el pago que todavía la frena.]"
             )
         else:
             orden_interna = (
@@ -756,11 +768,11 @@ def ejecutar_remarketing(numero_remitente):
                 "Han pasado 2 horas desde tu último mensaje y el prospecto no ha respondido. "
                 "Ya recibió el enlace oficial de Hotmart, pero todavía no ha confirmado su pago. "
                 "Redacta UN solo mensaje de seguimiento por WhatsApp (SOLO TEXTO, sin etiquetas [VIDEO]/[DOCUMENT]/[IMAGE] y SIN volver a pegar la URL del enlace) "
-                "sonando 100% humana, cercana y breve (máximo 3 párrafos cortos). "
+                "sonando 100% humana, cercana y breve (máximo 2 a 3 párrafos cortos). "
                 "Retoma el hilo natural según lo último que hablaron (por ejemplo el método de pago que mencionó): "
-                "pregúntale con naturalidad si pudo abrir el enlace o si le apareció algún detalle en pantalla, "
+                "pregúntale con naturalidad si pudo abrir bien el enlace o si le apareció algún detalle en pantalla, "
                 "recuérdale brevemente que su pago entra directo por *Hotmart* con total seguridad y cuenta con *7 días de garantía* para revisar el programa por dentro con tranquilidad, "
-                "y cierra en el último párrafo SOLO ofreciéndole ayuda inmediata si se trabó en algún paso (como con *Yape* o el método que eligió).]"
+                "y cierra en el último párrafo SOLO ofreciéndole ayuda inmediata si se trabó en algún paso (como con *Yape*, *Tarjeta* o *PagoEfectivo*).]"
             )
 
         prompt_rmk = f"{texto_historial}{orden_interna}".strip()
@@ -795,7 +807,10 @@ def ejecutar_remarketing(numero_remitente):
             if numero_remitente in buzon_mensajes and buzon_mensajes[numero_remitente]:
                 return
             est = estado_remarketing.get(numero_remitente)
-            if not est or est.get("pago_confirmado") or est.get("enviado"):
+            if not est or est.get("pago_confirmado"):
+                return
+            ya_enviado_etapa = est.get("enviado_post_link") if modo == "POST_LINK" else est.get("enviado_post_precio")
+            if ya_enviado_etapa:
                 return
             if est.get("ultima_interaccion_cliente", 0) != ultimo_ts_al_iniciar:
                 return
@@ -804,7 +819,10 @@ def ejecutar_remarketing(numero_remitente):
         if exito:
             with semaforo:
                 est = _obtener_estado_rmk_locked(numero_remitente)
-                est["enviado"] = True
+                if modo == "POST_LINK":
+                    est["enviado_post_link"] = True
+                else:
+                    est["enviado_post_precio"] = True
                 memoria_actual = list(historial_conversaciones.get(numero_remitente, []))
                 memoria_actual.append(f"Tú: {compactar_para_historial(texto_rmk)}")
                 historial_conversaciones[numero_remitente] = memoria_actual[-20:]
@@ -1000,7 +1018,7 @@ def enviar_respuesta_carla(numero_remitente, respuesta_final, activar_remarketin
                         bloques_media[i][2] = parrafos_finales[i]
                     bloques_media[-1][2] = "\n\n".join(parrafos_finales[len(bloques_media) - 1:])
 
-            # 1. Si hay texto introductorio (como el precio arriba en el Paso 4), lo envía primero en su burbuja
+            # 1. Si hay texto introductorio (como el puente en el Paso 2), lo envía primero en su burbuja
             if texto_inicial:
                 enviar_mensaje_whatsapp(numero_remitente, texto_inicial)
                 time.sleep(2.5)
@@ -1010,6 +1028,16 @@ def enviar_respuesta_carla(numero_remitente, respuesta_final, activar_remarketin
             for i, (tipo_media, url_archivo, caption_actual) in enumerate(bloques_media):
                 nombre_archivo = url_archivo.split("/")[-1]
                 es_ultimo = (i == total_archivos - 1)
+                texto_post_media = ""
+
+                # En Paso 3: separa el bloque final de Precio + Seguridad en su propia burbuja debajo de video-plataforma.mp4
+                if es_ultimo and nombre_archivo.lower() == "video-plataforma.mp4" and caption_actual:
+                    parrafos_video = [p.strip() for p in re.split(r'\n\s*\n', caption_actual) if p.strip()]
+                    if len(parrafos_video) >= 2 and any(
+                        k in "\n".join(parrafos_video[1:]).lower() for k in ("110.00", "s/ 110", "s/110", "220.00")
+                    ):
+                        caption_actual = parrafos_video[0]
+                        texto_post_media = "\n\n".join(parrafos_video[1:])
 
                 exito = enviar_multimedia_whatsapp(
                     numero_remitente,
@@ -1021,6 +1049,10 @@ def enviar_respuesta_carla(numero_remitente, respuesta_final, activar_remarketin
 
                 if not exito and caption_actual:
                     enviar_mensaje_whatsapp(numero_remitente, caption_actual)
+
+                if texto_post_media:
+                    time.sleep(2.5)
+                    enviar_mensaje_whatsapp(numero_remitente, texto_post_media)
 
                 if not es_ultimo:
                     time.sleep(4.0)
@@ -1046,7 +1078,7 @@ def enviar_respuesta_carla(numero_remitente, respuesta_final, activar_remarketin
         log(f"[ENVIO ERROR GENERAL] {traceback.format_exc()}")
 
 
-# --- CEREBRO DE CARLA (PASOS 1-4 GRATIS + NÚCLEO FIJO + 3 ANEXOS DESDE 1 SOLO TXT + VISIÓN) ---
+# --- CEREBRO DE CARLA (PASOS 1-3 GRATIS + NÚCLEO FIJO + 3 ANEXOS DESDE 1 SOLO TXT + VISIÓN) ---
 def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=None):
     global historial_conversaciones
 
@@ -1056,7 +1088,7 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
     with semaforo:
         memoria = list(historial_conversaciones.get(numero_remitente, []))
 
-    # --- 1. ATAJO GRATIS BLINDADO (PASOS 1 AL 4 SIN CONSUMIR TOKENS DE IA) ---
+    # --- 1. ATAJO GRATIS BLINDADO (PASOS 1 AL 3 SIN CONSUMIR TOKENS DE IA) ---
     paso_gratis, respuesta_gratis = detectar_paso_gratis(texto_recibido, media_recibida, memoria)
     if paso_gratis and respuesta_gratis:
         with semaforo:
@@ -1111,7 +1143,9 @@ def procesar_mensaje_gemini(numero_remitente, texto_recibido, media_recibida=Non
                         "una captura del checkout, del correo de Hotmart o un error en pantalla) y responde exactamente según lo que ves y tus reglas.]"
                     )
 
-            nota_caso_d = obtener_nota_rotacion_caso_d(numero_remitente, memoria, media_recibida)
+            nota_caso_d = obtener_nota_rotacion_caso_d(
+                numero_remitente, memoria, media_recibida, texto_recibido
+            )
 
             secciones_usuario = []
             if bloque_anexos:
